@@ -1,0 +1,58 @@
+{
+  "command": "week",
+  "data": [
+    {
+      "all_day": 0,
+      "date": "2026-02-09",
+      "timed": 0,
+      "total": 0
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-10",
+      "timed": 1,
+      "total": 1
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-11",
+      "timed": 1,
+      "total": 1
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-12",
+      "timed": 0,
+      "total": 0
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-13",
+      "timed": 0,
+      "total": 0
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-14",
+      "timed": 0,
+      "total": 0
+    },
+    {
+      "all_day": 0,
+      "date": "2026-02-15",
+      "timed": 0,
+      "total": 0
+    }
+  ],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 7,
+    "from": "2026-02-09",
+    "summary": true,
+    "to": "2026-02-15",
+    "view": "week",
+    "week_start": "Monday"
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

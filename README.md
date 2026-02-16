@@ -58,6 +58,8 @@ make release VERSION=v0.1.0
 Release scripts:
 - `scripts/release-check.sh` validates changelog format, runs tests/vet, and verifies stamped version output.
 - `scripts/release.sh` updates changelog, builds darwin archives, publishes GitHub release/tag, and updates Homebrew tap formula.
+- If the repository does not exist yet, `scripts/release.sh` creates it as **private** by default.
+- CI runs `release-check` on `pull_request` and pushes to `main` via `.github/workflows/release-check.yml`.
 
 ## Examples
 

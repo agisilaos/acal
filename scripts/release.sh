@@ -60,8 +60,8 @@ ensure_github_repo() {
   if gh repo view "${repo_owner}/${repo_name}" >/dev/null 2>&1; then
     return 0
   fi
-  print -- "Creating GitHub repo ${repo_owner}/${repo_name} (public)..."
-  gh repo create "${repo_owner}/${repo_name}" --public --confirm >/dev/null
+  print -- "Creating GitHub repo ${repo_owner}/${repo_name} (private)..."
+  gh repo create "${repo_owner}/${repo_name}" --private --confirm >/dev/null
 }
 
 require_clean_tree() {
@@ -407,4 +407,3 @@ main() {
 }
 
 main
-

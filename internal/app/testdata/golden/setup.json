@@ -1,0 +1,43 @@
+{
+  "command": "setup",
+  "data": {
+    "backend": "osascript",
+    "checks": [
+      {
+        "message": "osascript found",
+        "name": "osascript",
+        "status": "ok"
+      },
+      {
+        "message": "Calendar automation reachable",
+        "name": "calendar_access",
+        "status": "ok"
+      },
+      {
+        "message": "Calendar database found",
+        "name": "calendar_db",
+        "status": "ok"
+      },
+      {
+        "message": "Calendar database readable",
+        "name": "calendar_db_read",
+        "status": "ok"
+      }
+    ],
+    "degraded": false,
+    "next_steps": [
+      "Verify read access with: `acal today --json`",
+      "Verify write access with: `acal quick-add \"tomorrow 10:00 Test @Personal 30m\" --dry-run --json`"
+    ],
+    "permission_model": "macOS TCC stores approvals per app identity; keep a stable terminal and acal install path",
+    "ready": true
+  },
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 4,
+    "degraded": false,
+    "ready": true
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

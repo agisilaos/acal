@@ -1,0 +1,43 @@
+{
+  "command": "month",
+  "data": [
+    {
+      "all_day": false,
+      "calendar_id": "cal-1",
+      "calendar_name": "Work",
+      "end": "2026-02-10T10:30:00Z",
+      "id": "evt-1@792417600",
+      "location": "",
+      "notes": "",
+      "sequence": 0,
+      "start": "2026-02-10T10:00:00Z",
+      "title": "Standup",
+      "updated_at": "0001-01-01T00:00:00Z",
+      "url": ""
+    },
+    {
+      "all_day": false,
+      "calendar_id": "cal-1",
+      "calendar_name": "Work",
+      "end": "2026-02-11T11:00:00Z",
+      "id": "evt-2@792504000",
+      "location": "",
+      "notes": "",
+      "sequence": 0,
+      "start": "2026-02-11T10:00:00Z",
+      "title": "Planning",
+      "updated_at": "0001-01-01T00:00:00Z",
+      "url": ""
+    }
+  ],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 2,
+    "from": "2026-02-01",
+    "month": "2026-02",
+    "to": "2026-02-28",
+    "view": "month"
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

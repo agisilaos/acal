@@ -1,0 +1,19 @@
+{
+  "command": "quick-add",
+  "data": {
+    "AllDay": false,
+    "Calendar": "Personal",
+    "End": "2026-02-18T10:00:00Z",
+    "Location": "",
+    "Notes": "",
+    "Start": "2026-02-18T09:15:00Z",
+    "Title": "Deep Work",
+    "URL": ""
+  },
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "dry_run": true
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

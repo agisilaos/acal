@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var backendFactory = selectBackend
+
 type globalOptions struct {
 	JSON          bool
 	JSONL         bool
@@ -670,7 +672,7 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 
 	printer := output.Printer{Mode: mode, Command: command, Fields: splitCSV(resolved.Fields), Quiet: resolved.Quiet, SchemaVersion: resolved.SchemaVersion}
 
-	be, err := selectBackend(resolved.Backend)
+	be, err := backendFactory(resolved.Backend)
 	if err != nil {
 		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use --backend osascript")
 		return printer, nil, nil, Wrap(2, err)

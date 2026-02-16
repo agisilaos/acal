@@ -1,0 +1,22 @@
+name: release-check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  release-check:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run release check
+        run: ./scripts/release-check.sh v0.0.0
+
