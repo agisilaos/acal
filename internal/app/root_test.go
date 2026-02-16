@@ -3,6 +3,8 @@ package app
 import (
 	"testing"
 	"time"
+
+	"github.com/agis/acal/internal/backend"
 )
 
 func TestResolveEndDuration(t *testing.T) {
@@ -102,5 +104,35 @@ func TestParseMonthOrDate(t *testing.T) {
 	}
 	if got, want := ts.Format(time.RFC3339), "2026-02-18T00:00:00Z"; got != want {
 		t.Fatalf("got=%s want=%s", got, want)
+	}
+}
+
+func TestParseRecurrenceScope(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    backend.RecurrenceScope
+		wantErr bool
+	}{
+		{in: "", want: backend.ScopeAuto},
+		{in: "auto", want: backend.ScopeAuto},
+		{in: "this", want: backend.ScopeThis},
+		{in: "future", want: backend.ScopeFuture},
+		{in: "series", want: backend.ScopeSeries},
+		{in: "bad", wantErr: true},
+	}
+	for _, tc := range tests {
+		got, err := parseRecurrenceScope(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("parseRecurrenceScope(%q): expected error", tc.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("parseRecurrenceScope(%q): unexpected error: %v", tc.in, err)
+		}
+		if got != tc.want {
+			t.Fatalf("parseRecurrenceScope(%q): got=%q want=%q", tc.in, got, tc.want)
+		}
 	}
 }

@@ -424,9 +424,16 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 }
 
 func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventUpdateInput) (*contract.Event, error) {
-	uid, _ := parseEventID(id)
+	uid, occ := parseEventID(id)
 	if uid == "" {
 		return nil, fmt.Errorf("invalid event id")
+	}
+	scope, err := resolveRecurrenceScope(in.Scope, occ)
+	if err != nil {
+		return nil, err
+	}
+	if scope == ScopeFuture {
+		return nil, fmt.Errorf("recurrence scope %q is not supported by osascript backend yet", ScopeFuture)
 	}
 
 	keep := "__ACAL_KEEP__"
@@ -458,27 +465,42 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	if in.URL != nil {
 		url = *in.URL
 	}
+	occUnix := "0"
+	if occ > 0 {
+		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
+	}
 
 	out, err := runAppleScript([]string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
-		`set titleText to item 2 of argv`,
-		`set startText to item 3 of argv`,
-		`set endText to item 4 of argv`,
-		`set locText to item 5 of argv`,
-		`set notesText to item 6 of argv`,
-		`set urlText to item 7 of argv`,
-		`set allDayText to item 8 of argv`,
+		`set scopeText to item 2 of argv`,
+		`set occUnix to item 3 of argv as integer`,
+		`set titleText to item 4 of argv`,
+		`set startText to item 5 of argv`,
+		`set endText to item 6 of argv`,
+		`set locText to item 7 of argv`,
+		`set notesText to item 8 of argv`,
+		`set urlText to item 9 of argv`,
+		`set allDayText to item 10 of argv`,
 		`set epoch to date "1/1/1970 00:00:00"`,
 		`tell application "Calendar"`,
 		`set targetEvent to missing value`,
 		`repeat with c in calendars`,
+		`if scopeText is "series" then`,
 		`try`,
 		`set targetEvent to first event of c whose uid is uidText`,
 		`exit repeat`,
 		`on error`,
 		`set targetEvent to missing value`,
 		`end try`,
+		`else`,
+		`try`,
+		`set targetEvent to first event of c whose uid is uidText and ((start date of it - epoch) as integer) is occUnix`,
+		`exit repeat`,
+		`on error`,
+		`set targetEvent to missing value`,
+		`end try`,
+		`end if`,
 		`end repeat`,
 		`if targetEvent is missing value then error "event not found"`,
 		`if titleText is not "__ACAL_KEEP__" then set summary of targetEvent to titleText`,
@@ -497,7 +519,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`return uid of targetEvent as text`,
 		`end tell`,
 		`end run`,
-	}, uid, title, start, end, location, notes, url, allDay)
+	}, uid, string(scope), occUnix, title, start, end, location, notes, url, allDay)
 	if err != nil {
 		return nil, err
 	}
@@ -543,28 +565,70 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	return fallback, nil
 }
 
-func (b *OsaScriptBackend) DeleteEvent(_ context.Context, id string) error {
-	uid, _ := parseEventID(id)
+func (b *OsaScriptBackend) DeleteEvent(_ context.Context, id string, scope RecurrenceScope) error {
+	uid, occ := parseEventID(id)
 	if uid == "" {
 		return fmt.Errorf("invalid event id")
 	}
-	_, err := runAppleScript([]string{
+	resolvedScope, err := resolveRecurrenceScope(scope, occ)
+	if err != nil {
+		return err
+	}
+	if resolvedScope == ScopeFuture {
+		return fmt.Errorf("recurrence scope %q is not supported by osascript backend yet", ScopeFuture)
+	}
+	occUnix := "0"
+	if occ > 0 {
+		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
+	}
+	_, err = runAppleScript([]string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
+		`set scopeText to item 2 of argv`,
+		`set occUnix to item 3 of argv as integer`,
+		`set epoch to date "1/1/1970 00:00:00"`,
 		`tell application "Calendar"`,
 		`repeat with c in calendars`,
+		`if scopeText is "series" then`,
 		`try`,
 		`set targetEvent to first event of c whose uid is uidText`,
 		`delete targetEvent`,
 		`return "ok"`,
 		`on error`,
 		`end try`,
+		`else`,
+		`try`,
+		`set targetEvent to first event of c whose uid is uidText and ((start date of it - epoch) as integer) is occUnix`,
+		`delete targetEvent`,
+		`return "ok"`,
+		`on error`,
+		`end try`,
+		`end if`,
 		`end repeat`,
 		`error "event not found"`,
 		`end tell`,
 		`end run`,
-	}, uid)
+	}, uid, string(resolvedScope), occUnix)
 	return err
+}
+
+func resolveRecurrenceScope(scope RecurrenceScope, occurrenceCocoa int64) (RecurrenceScope, error) {
+	switch scope {
+	case "", ScopeAuto:
+		if occurrenceCocoa > 0 {
+			return ScopeThis, nil
+		}
+		return ScopeSeries, nil
+	case ScopeThis, ScopeFuture:
+		if occurrenceCocoa <= 0 {
+			return "", fmt.Errorf("scope %q requires an occurrence event id (<uid>@<occurrence>)", scope)
+		}
+		return scope, nil
+	case ScopeSeries:
+		return ScopeSeries, nil
+	default:
+		return "", fmt.Errorf("invalid recurrence scope: %q", scope)
+	}
 }
 
 func findCalendarDB() (string, error) {

@@ -92,8 +92,8 @@ Release scripts:
 ./acal events list --from today --to +7d --json
 ./acal events query --from today --to +14d --where 'title~sleep' --sort start --order asc --plain --fields id,title,start,end
 ./acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
-./acal events update <event-id> --location "Room 4A" --if-match-seq 1
-./acal events delete <event-id> --confirm <event-id> --no-input
+./acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1
+./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
 ```
 
 ## Notes
@@ -101,3 +101,8 @@ Release scripts:
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
+- Recurring write scope:
+  - `--scope auto`: if ID is `<uid>@<occurrence>`, targets one occurrence; otherwise targets full series.
+  - `--scope this`: target one occurrence (requires occurrence-style ID).
+  - `--scope series`: target the full series.
+  - `--scope future`: parsed and validated but not yet supported by the `osascript` backend.

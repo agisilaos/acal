@@ -43,7 +43,7 @@ func (f *fakeBackend) UpdateEvent(context.Context, string, backend.EventUpdateIn
 	return nil, nil
 }
 
-func (f *fakeBackend) DeleteEvent(context.Context, string) error {
+func (f *fakeBackend) DeleteEvent(context.Context, string, backend.RecurrenceScope) error {
 	return nil
 }
 

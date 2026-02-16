@@ -16,6 +16,15 @@ type EventFilter struct {
 	Field     string
 }
 
+type RecurrenceScope string
+
+const (
+	ScopeAuto   RecurrenceScope = "auto"
+	ScopeThis   RecurrenceScope = "this"
+	ScopeFuture RecurrenceScope = "future"
+	ScopeSeries RecurrenceScope = "series"
+)
+
 type EventCreateInput struct {
 	Calendar string
 	Title    string
@@ -35,6 +44,7 @@ type EventUpdateInput struct {
 	Notes    *string
 	URL      *string
 	AllDay   *bool
+	Scope    RecurrenceScope
 }
 
 type Backend interface {
@@ -44,5 +54,5 @@ type Backend interface {
 	GetEventByID(context.Context, string) (*contract.Event, error)
 	AddEvent(context.Context, EventCreateInput) (*contract.Event, error)
 	UpdateEvent(context.Context, string, EventUpdateInput) (*contract.Event, error)
-	DeleteEvent(context.Context, string) error
+	DeleteEvent(context.Context, string, RecurrenceScope) error
 }

@@ -66,3 +66,33 @@ func TestIsDBAccessDenied(t *testing.T) {
 		t.Fatalf("expected false for unrelated sqlite error")
 	}
 }
+
+func TestResolveRecurrenceScopeAuto(t *testing.T) {
+	got, err := resolveRecurrenceScope(ScopeAuto, 792417600)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != ScopeThis {
+		t.Fatalf("got=%q want=%q", got, ScopeThis)
+	}
+
+	got, err = resolveRecurrenceScope(ScopeAuto, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != ScopeSeries {
+		t.Fatalf("got=%q want=%q", got, ScopeSeries)
+	}
+}
+
+func TestResolveRecurrenceScopeValidation(t *testing.T) {
+	if _, err := resolveRecurrenceScope(ScopeThis, 0); err == nil {
+		t.Fatalf("expected error for this without occurrence")
+	}
+	if _, err := resolveRecurrenceScope(ScopeFuture, 0); err == nil {
+		t.Fatalf("expected error for future without occurrence")
+	}
+	if _, err := resolveRecurrenceScope(RecurrenceScope("bad"), 1); err == nil {
+		t.Fatalf("expected error for invalid scope")
+	}
+}
