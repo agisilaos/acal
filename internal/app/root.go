@@ -46,7 +46,9 @@ func NewRootCommand() *cobra.Command {
 		Short:         "Query and manage Apple Calendar from terminal workflows and agents",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Version:       BuildVersionString(),
 	}
+	root.SetVersionTemplate("acal {{.Version}}\n")
 
 	root.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output structured JSON")
 	root.PersistentFlags().BoolVar(&opts.JSONL, "jsonl", false, "Output newline-delimited JSON")
@@ -63,6 +65,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
 
 	root.AddCommand(newSetupCmd(opts))
+	root.AddCommand(newVersionCmd())
 	root.AddCommand(newDoctorCmd(opts))
 	root.AddCommand(newCalendarsCmd(opts))
 	root.AddCommand(newEventsCmd(opts))
@@ -75,6 +78,16 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newCompletionCmd(root))
 
 	return root
+}
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, _ []string) {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "acal %s\n", BuildVersionString())
+		},
+	}
 }
 
 func newDoctorCmd(opts *globalOptions) *cobra.Command {
