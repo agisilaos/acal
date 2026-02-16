@@ -80,24 +80,7 @@ last_tag() {
   git describe --tags --abbrev=0 2>/dev/null || true
 }
 
-extract_unreleased_notes() {
-  python3 - <<'PY'
-txt=open("CHANGELOG.md","r",encoding="utf-8").read().splitlines()
-out=[]
-in_un=False
-for line in txt:
-    if line.strip() == "## [Unreleased]":
-        in_un=True
-        continue
-    if in_un and line.startswith("## ["):
-        break
-    if in_un:
-        out.append(line)
-print("\n".join(out).strip())
-PY
-}
-
-generate_fallback_notes() {
+generate_release_notes() {
   local prev_tag="$1"
   if [[ -n "${prev_tag}" ]]; then
     git log --no-merges --pretty=format:'- %s (%h)' "${prev_tag}..HEAD"
@@ -115,10 +98,7 @@ update_changelog() {
   [[ -f CHANGELOG.md ]] || die "CHANGELOG.md not found"
 
   local notes
-  notes="$(extract_unreleased_notes)"
-  if [[ -z "${notes}" ]]; then
-    notes="$(generate_fallback_notes "${prev_tag}")"
-  fi
+  notes="$(generate_release_notes "${prev_tag}")"
   if [[ -z "${notes}" ]]; then
     notes="- No changes recorded."
   fi
@@ -138,43 +118,16 @@ if any(line.startswith(target_header) for line in lines):
     raise SystemExit(f"error: {version} already exists in CHANGELOG.md")
 
 out=[]
-in_unreleased=False
-inserted=False
-has_unreleased = any(line.strip() == "## [Unreleased]" for line in lines)
+insert_at = None
+for i, line in enumerate(lines):
+    if line.startswith("## ["):
+        insert_at = i
+        break
 
-if has_unreleased:
-    for line in lines:
-        if line.strip() == "## [Unreleased]":
-            out.append(line)
-            out.append("")
-            out.append(f"## [{version}] - {date}")
-            out.append("")
-            out.extend(notes.splitlines() if notes.strip() else ["- No changes recorded."])
-            out.append("")
-            inserted=True
-            in_unreleased=True
-            continue
-
-        if in_unreleased:
-            if line.startswith("## ["):
-                in_unreleased=False
-                out.append(line)
-            else:
-                continue
-        else:
-            out.append(line)
+if insert_at is None:
+    out = lines[:] + ["", f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""]
 else:
-    insert_at = None
-    for i, line in enumerate(lines):
-        if line.startswith("## ["):
-            insert_at = i
-            break
-
-    if insert_at is None:
-        out = lines[:] + ["", f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""]
-    else:
-        out = lines[:insert_at] + [f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""] + lines[insert_at:]
-    inserted = True
+    out = lines[:insert_at] + [f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""] + lines[insert_at:]
 
 open(path,"w",encoding="utf-8").write("\n".join(out).rstrip() + "\n")
 PY
