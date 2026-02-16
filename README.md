@@ -6,6 +6,7 @@
 
 - `doctor`
 - `setup`
+- `version`
 - `calendars list`
 - `events list`
 - `events search`
@@ -66,6 +67,7 @@ Release scripts:
 ```bash
 ./acal doctor --json
 ./acal setup --json
+./acal version
 ./acal today --json
 ./acal today --summary --plain --fields date,total,all_day,timed
 ./acal week --of today --week-start monday --plain
