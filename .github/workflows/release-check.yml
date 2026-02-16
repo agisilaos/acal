@@ -18,5 +18,4 @@ jobs:
           go-version-file: go.mod
 
       - name: Run release check
-        run: ./scripts/release-check.sh v0.0.0
-
+        run: make release-check VERSION=v0.0.0

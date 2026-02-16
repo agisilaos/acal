@@ -22,11 +22,6 @@ if [[ ! -f CHANGELOG.md ]]; then
   exit 1
 fi
 
-if ! rg -q '^## \[Unreleased\]' CHANGELOG.md; then
-  echo "error: CHANGELOG.md is missing '## [Unreleased]'" >&2
-  exit 1
-fi
-
 if rg -q "^## \[$version\]" CHANGELOG.md; then
   echo "error: CHANGELOG.md already contains $version" >&2
   exit 1
@@ -62,4 +57,3 @@ echo "  version:   $version"
 echo "  commit:    $commit"
 echo "  buildDate: $build_date"
 echo "  binary:    $out_bin"
-

@@ -140,30 +140,41 @@ if any(line.startswith(target_header) for line in lines):
 out=[]
 in_unreleased=False
 inserted=False
+has_unreleased = any(line.strip() == "## [Unreleased]" for line in lines)
 
-for line in lines:
-    if line.strip() == "## [Unreleased]":
-        out.append(line)
-        out.append("")
-        out.append(f"## [{version}] - {date}")
-        out.append("")
-        out.extend(notes.splitlines() if notes.strip() else ["- No changes recorded."])
-        out.append("")
-        inserted=True
-        in_unreleased=True
-        continue
-
-    if in_unreleased:
-        if line.startswith("## ["):
-            in_unreleased=False
+if has_unreleased:
+    for line in lines:
+        if line.strip() == "## [Unreleased]":
             out.append(line)
-        else:
+            out.append("")
+            out.append(f"## [{version}] - {date}")
+            out.append("")
+            out.extend(notes.splitlines() if notes.strip() else ["- No changes recorded."])
+            out.append("")
+            inserted=True
+            in_unreleased=True
             continue
-    else:
-        out.append(line)
 
-if not inserted:
-    raise SystemExit("error: CHANGELOG.md missing '## [Unreleased]' header")
+        if in_unreleased:
+            if line.startswith("## ["):
+                in_unreleased=False
+                out.append(line)
+            else:
+                continue
+        else:
+            out.append(line)
+else:
+    insert_at = None
+    for i, line in enumerate(lines):
+        if line.startswith("## ["):
+            insert_at = i
+            break
+
+    if insert_at is None:
+        out = lines[:] + ["", f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""]
+    else:
+        out = lines[:insert_at] + [f"## [{version}] - {date}", ""] + (notes.splitlines() if notes.strip() else ["- No changes recorded."]) + [""] + lines[insert_at:]
+    inserted = True
 
 open(path,"w",encoding="utf-8").write("\n".join(out).rstrip() + "\n")
 PY
