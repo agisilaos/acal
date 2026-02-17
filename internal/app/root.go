@@ -66,6 +66,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
 
 	root.AddCommand(newSetupCmd(opts))
+	root.AddCommand(newStatusCmd(opts))
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newDoctorCmd(opts))
 	root.AddCommand(newCalendarsCmd(opts))

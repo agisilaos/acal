@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -107,5 +108,59 @@ func TestDoctorAndCalendarsCommands(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "\"name\": \"Work\"") {
 		t.Fatalf("unexpected calendars output: %q", got)
+	}
+}
+
+func TestStatusCommand(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db", Status: "ok"},
+			{Name: "calendar_db_read", Status: "ok"},
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	var out bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "\"command\": \"status\"") {
+		t.Fatalf("expected status command in output: %q", got)
+	}
+	if !strings.Contains(got, "\"ready\": true") {
+		t.Fatalf("expected ready=true in output: %q", got)
+	}
+}
+
+func TestStatusCommandNotReadyExitCode(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "fail"},
+		},
+		doctorErr: errors.New("osascript missing"),
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status", "--json"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected status error")
+	}
+	if code := ExitCode(err); code != 6 {
+		t.Fatalf("exit code mismatch: got=%d want=6", code)
 	}
 }

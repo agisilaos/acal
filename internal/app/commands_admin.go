@@ -9,6 +9,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type statusResult struct {
+	Ready         bool                   `json:"ready"`
+	Degraded      bool                   `json:"degraded"`
+	Backend       string                 `json:"backend"`
+	Profile       string                 `json:"profile"`
+	TZ            string                 `json:"tz,omitempty"`
+	OutputMode    string                 `json:"output_mode"`
+	SchemaVersion string                 `json:"schema_version"`
+	Checks        []contract.DoctorCheck `json:"checks"`
+	NextSteps     []string               `json:"next_steps,omitempty"`
+}
+
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -34,6 +46,45 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			if derr != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run with GUI session and grant Calendar automation permission")
 				return Wrap(6, derr)
+			}
+			return nil
+		},
+	}
+}
+
+func newStatusCmd(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show backend health and active runtime configuration",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, be, ro, err := buildContext(cmd, opts, "status")
+			if err != nil {
+				return err
+			}
+			checks, derr := be.Doctor(context.Background())
+			setup := buildSetupResult(checks, derr, ro.Backend)
+			res := statusResult{
+				Ready:         setup.Ready,
+				Degraded:      setup.Degraded,
+				Backend:       ro.Backend,
+				Profile:       ro.Profile,
+				TZ:            ro.TZ,
+				OutputMode:    string(p.Mode),
+				SchemaVersion: ro.SchemaVersion,
+				Checks:        checks,
+				NextSteps:     setup.NextSteps,
+			}
+			_ = p.Success(res, map[string]any{
+				"ready":    res.Ready,
+				"degraded": res.Degraded,
+				"checks":   len(res.Checks),
+			}, nil)
+			if !setup.Ready {
+				if derr != nil {
+					_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` for remediation")
+					return Wrap(6, derr)
+				}
+				return Wrap(6, fmt.Errorf("status not ready"))
 			}
 			return nil
 		},

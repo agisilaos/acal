@@ -19,6 +19,7 @@ acal version
 
 - `doctor`
 - `setup`
+- `status`
 - `version`
 - `calendars list`
 - `events list`
@@ -84,6 +85,7 @@ Release scripts:
 ```bash
 ./acal doctor --json
 ./acal setup --json
+./acal status --json
 ./acal version
 ./acal today --json
 ./acal today --summary --plain --fields date,total,all_day,timed
@@ -110,6 +112,7 @@ Release scripts:
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
+- `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - Delete safety model:
   - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
   - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.
