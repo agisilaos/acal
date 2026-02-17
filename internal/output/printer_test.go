@@ -56,3 +56,26 @@ func TestPrinterWritesToInjectedWriters(t *testing.T) {
 		t.Fatalf("unexpected stderr: %q", got)
 	}
 }
+
+func TestPrinterErrorRespectsNoColorAndEnv(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var errb bytes.Buffer
+	p := Printer{Err: &errb}
+	if err := p.Error(contract.ErrInvalidUsage, "bad input", ""); err != nil {
+		t.Fatalf("error output failed: %v", err)
+	}
+	got := errb.String()
+	if strings.Contains(got, "\x1b[31m") {
+		t.Fatalf("did not expect ansi color codes in %q", got)
+	}
+
+	errb.Reset()
+	p = Printer{Err: &errb, NoColor: true}
+	if err := p.Error(contract.ErrInvalidUsage, "bad input", ""); err != nil {
+		t.Fatalf("error output failed: %v", err)
+	}
+	got = errb.String()
+	if strings.Contains(got, "\x1b[31m") {
+		t.Fatalf("did not expect ansi color codes with --no-color in %q", got)
+	}
+}

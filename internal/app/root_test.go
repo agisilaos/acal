@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"os"
 	"testing"
 	"time"
 
@@ -160,5 +161,57 @@ func TestPromptConfirmIDMismatch(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("expected mismatch")
+	}
+}
+
+func TestReadTextInputFileAndStdin(t *testing.T) {
+	tmp := t.TempDir() + "/note.txt"
+	if err := os.WriteFile(tmp, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+	got, err := readTextInput(tmp)
+	if err != nil {
+		t.Fatalf("readTextInput(file) failed: %v", err)
+	}
+	if got != "hello" {
+		t.Fatalf("file content mismatch: %q", got)
+	}
+
+	orig := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	_, _ = w.WriteString("stdin text")
+	_ = w.Close()
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = orig
+		_ = r.Close()
+	})
+
+	got, err = readTextInput("-")
+	if err != nil {
+		t.Fatalf("readTextInput(stdin) failed: %v", err)
+	}
+	if got != "stdin text" {
+		t.Fatalf("stdin content mismatch: %q", got)
+	}
+}
+
+func TestStdinInteractiveFalseForPipe(t *testing.T) {
+	orig := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe failed: %v", err)
+	}
+	_ = w.Close()
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = orig
+		_ = r.Close()
+	})
+	if stdinInteractive() {
+		t.Fatalf("expected non-interactive for pipe stdin")
 	}
 }
