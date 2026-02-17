@@ -98,7 +98,15 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		mode = output.ModePlain
 	}
 
-	printer := output.Printer{Mode: mode, Command: command, Fields: splitCSV(resolved.Fields), Quiet: resolved.Quiet, SchemaVersion: resolved.SchemaVersion}
+	printer := output.Printer{
+		Mode:          mode,
+		Command:       command,
+		Fields:        splitCSV(resolved.Fields),
+		Quiet:         resolved.Quiet,
+		SchemaVersion: resolved.SchemaVersion,
+		Out:           cmd.OutOrStdout(),
+		Err:           cmd.ErrOrStderr(),
+	}
 
 	be, err := backendFactory(resolved.Backend)
 	if err != nil {

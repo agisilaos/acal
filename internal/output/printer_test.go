@@ -1,6 +1,8 @@
 package output
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,5 +25,34 @@ func TestFlattenWithFields(t *testing.T) {
 	got := flatten(e, []string{"id", "title"})
 	if got != "abc\tStandup" {
 		t.Fatalf("unexpected flatten result: %q", got)
+	}
+}
+
+func TestPrinterWritesToInjectedWriters(t *testing.T) {
+	var out bytes.Buffer
+	var errb bytes.Buffer
+	p := Printer{
+		Mode:    ModePlain,
+		Command: "today",
+		Fields:  []string{"id", "title"},
+		Out:     &out,
+		Err:     &errb,
+	}
+
+	if err := p.Success(contract.Event{ID: "evt-1", Title: "Standup"}, nil, nil); err != nil {
+		t.Fatalf("success failed: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "evt-1\tStandup") {
+		t.Fatalf("unexpected stdout: %q", got)
+	}
+	if errb.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", errb.String())
+	}
+
+	if err := p.Error(contract.ErrInvalidUsage, "bad input", "use --help"); err != nil {
+		t.Fatalf("error output failed: %v", err)
+	}
+	if got := errb.String(); !strings.Contains(got, "error: bad input") {
+		t.Fatalf("unexpected stderr: %q", got)
 	}
 }

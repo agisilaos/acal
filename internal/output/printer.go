@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -26,6 +27,8 @@ type Printer struct {
 	Fields        []string
 	Quiet         bool
 	SchemaVersion string
+	Out           io.Writer
+	Err           io.Writer
 }
 
 func (p Printer) Success(data any, meta map[string]any, warnings []string) error {
@@ -39,13 +42,13 @@ func (p Printer) Success(data any, meta map[string]any, warnings []string) error
 			Meta:          meta,
 			Warnings:      warnings,
 		}
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(p.outWriter())
 		enc.SetIndent("", "  ")
 		return enc.Encode(env)
 	case ModeJSONL:
 		v := reflect.ValueOf(data)
 		if v.IsValid() && v.Kind() == reflect.Slice {
-			enc := json.NewEncoder(os.Stdout)
+			enc := json.NewEncoder(p.outWriter())
 			for i := 0; i < v.Len(); i++ {
 				if err := enc.Encode(v.Index(i).Interface()); err != nil {
 					return err
@@ -53,7 +56,7 @@ func (p Printer) Success(data any, meta map[string]any, warnings []string) error
 			}
 			return nil
 		}
-		return json.NewEncoder(os.Stdout).Encode(data)
+		return json.NewEncoder(p.outWriter()).Encode(data)
 	default:
 		return p.printPlain(data)
 	}
@@ -65,15 +68,15 @@ func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
 			SchemaVersion: p.schemaVersion(),
 			Error:         contract.ErrorBody{Code: code, Message: message, Hint: hint},
 		}
-		enc := json.NewEncoder(os.Stderr)
+		enc := json.NewEncoder(p.errWriter())
 		enc.SetIndent("", "  ")
 		return enc.Encode(env)
 	}
 	if hint != "" {
-		_, _ = fmt.Fprintf(os.Stderr, "error: %s\nhint: %s\n", message, hint)
+		_, _ = fmt.Fprintf(p.errWriter(), "error: %s\nhint: %s\n", message, hint)
 		return nil
 	}
-	_, _ = fmt.Fprintf(os.Stderr, "error: %s\n", message)
+	_, _ = fmt.Fprintf(p.errWriter(), "error: %s\n", message)
 	return nil
 }
 
@@ -88,20 +91,34 @@ func (p Printer) printPlain(data any) error {
 	v := reflect.ValueOf(data)
 	if !v.IsValid() || (v.Kind() == reflect.Slice && v.Len() == 0) {
 		if !p.Quiet {
-			_, _ = fmt.Fprintln(os.Stdout, "no results")
+			_, _ = fmt.Fprintln(p.outWriter(), "no results")
 		}
 		return nil
 	}
 	if v.Kind() == reflect.Slice {
 		for i := 0; i < v.Len(); i++ {
-			if _, err := fmt.Fprintln(os.Stdout, flatten(v.Index(i).Interface(), p.Fields)); err != nil {
+			if _, err := fmt.Fprintln(p.outWriter(), flatten(v.Index(i).Interface(), p.Fields)); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	_, err := fmt.Fprintln(os.Stdout, flatten(data, p.Fields))
+	_, err := fmt.Fprintln(p.outWriter(), flatten(data, p.Fields))
 	return err
+}
+
+func (p Printer) outWriter() io.Writer {
+	if p.Out != nil {
+		return p.Out
+	}
+	return os.Stdout
+}
+
+func (p Printer) errWriter() io.Writer {
+	if p.Err != nil {
+		return p.Err
+	}
+	return os.Stderr
 }
 
 func flatten(v any, fields []string) string {
