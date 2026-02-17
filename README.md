@@ -47,6 +47,7 @@ acal version
 - `completion`
 - `history list`
 - `history undo`
+- `history redo`
 - `queries save`
 - `queries list`
 - `queries run`
@@ -59,6 +60,33 @@ acal version
 - `--plain` stable line-based output
 - `--verbose` diagnostics to stderr (resolved command/backend/mode/profile)
 - `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
+
+## Agent usage
+
+Recommended automation patterns:
+
+- Deterministic reads:
+  - `acal events query --from today --to +7d --where 'title~standup' --sort start --order asc --json`
+- Safe writes preview:
+  - `acal events add ... --dry-run --json`
+  - `acal events batch --file ops.jsonl --dry-run --strict --json`
+  - `acal events import --file calendar.ics --calendar Work --dry-run --strict --json`
+- Idempotent orchestration:
+  - save named filters with `acal queries save <name> ...`
+  - execute with `acal queries run <name> --json`
+- Rollback guardrails:
+  - inspect `acal history list --json`
+  - rollback with `acal history undo --json`
+  - re-apply with `acal history redo --json`
+
+Exit codes:
+
+- `0`: success
+- `1`: runtime/processing failure
+- `2`: invalid usage or validation failure
+- `4`: resource not found
+- `6`: backend unavailable
+- `7`: concurrency conflict (sequence mismatch)
 
 ## Config and precedence
 
@@ -111,6 +139,7 @@ Release scripts:
 ./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
 ./acal history list --json
 ./acal history undo --dry-run --json
+./acal history redo --dry-run --json
 ./acal queries save next7 --from today --to +7d --where 'title~standup' --limit 10
 ./acal queries run next7 --json
 ./acal events quick-add "2026-02-18 09:15 Deep Work @Personal 45m"
@@ -139,6 +168,14 @@ Release scripts:
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
+- Persistence files (under config dir, usually `~/.config/acal/`):
+  - `config.toml`: runtime defaults/profiles.
+  - `history.jsonl`: append-only write history for undo.
+    - JSONL schema: `{"at","type","event_id","prev","next","created","deleted"}`
+  - `redo.jsonl`: redo stack populated by `history undo`.
+    - JSONL schema: same as `history.jsonl`.
+  - `queries.json`: saved query aliases.
+    - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
 - Delete safety model:
   - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
   - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.

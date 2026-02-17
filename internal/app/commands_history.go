@@ -52,6 +52,26 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 	}
 	undo.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview undo without writing")
 
-	history.AddCommand(list, undo)
+	redo := &cobra.Command{
+		Use:   "redo",
+		Short: "Redo the latest undone write operation",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, be, _, err := buildContext(cmd, opts, "history.redo")
+			if err != nil {
+				return err
+			}
+			entry, meta, err := redoLastHistory(context.Background(), be, dryRun)
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Run `acal history undo` first to create redo entries", 1)
+			}
+			if dryRun {
+				meta["redone"] = false
+			}
+			return p.Success(entry, meta, nil)
+		},
+	}
+	redo.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview redo without writing")
+
+	history.AddCommand(list, undo, redo)
 	return history
 }

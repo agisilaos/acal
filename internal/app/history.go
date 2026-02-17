@@ -18,6 +18,8 @@ type historyEntry struct {
 	Type    string          `json:"type"`
 	EventID string          `json:"event_id,omitempty"`
 	Prev    *contract.Event `json:"prev,omitempty"`
+	Next    *contract.Event `json:"next,omitempty"`
+	Created *contract.Event `json:"created,omitempty"`
 	Deleted *contract.Event `json:"deleted,omitempty"`
 }
 
@@ -50,8 +52,10 @@ func appendHistory(entry historyEntry) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(append(b, '\n'))
-	return err
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		return err
+	}
+	return clearRedoHistory()
 }
 
 func readHistory() ([]historyEntry, error) {
@@ -102,6 +106,67 @@ func writeHistory(entries []historyEntry) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
+func redoFilePath() string {
+	base := defaultUserConfigPath()
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	dir := filepath.Dir(base)
+	return filepath.Join(dir, "redo.jsonl")
+}
+
+func readRedoHistory() ([]historyEntry, error) {
+	path := redoFilePath()
+	if path == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	out := make([]historyEntry, 0, len(lines))
+	for _, line := range lines {
+		s := strings.TrimSpace(line)
+		if s == "" {
+			continue
+		}
+		var e historyEntry
+		if err := json.Unmarshal([]byte(s), &e); err != nil {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+func writeRedoHistory(entries []historyEntry) error {
+	path := redoFilePath()
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		line, err := json.Marshal(e)
+		if err != nil {
+			return err
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+func clearRedoHistory() error {
+	return writeRedoHistory(nil)
+}
+
 func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (historyEntry, map[string]any, error) {
 	entries, err := readHistory()
 	if err != nil {
@@ -116,6 +181,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		meta["dry_run"] = true
 		return last, meta, nil
 	}
+	redoEntry := last
 	switch last.Type {
 	case "add":
 		if strings.TrimSpace(last.EventID) == "" {
@@ -141,21 +207,19 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if strings.TrimSpace(in.Calendar) == "" {
 			return historyEntry{}, nil, fmt.Errorf("deleted entry missing calendar")
 		}
-		if _, err := be.AddEvent(ctx, in); err != nil {
+		created, err := be.AddEvent(ctx, in)
+		if err != nil {
 			return historyEntry{}, nil, err
+		}
+		if created != nil {
+			redoEntry.EventID = created.ID
+			redoEntry.Deleted = created
 		}
 	case "update":
 		if last.Prev == nil {
 			return historyEntry{}, nil, fmt.Errorf("invalid update history entry")
 		}
-		in := backend.EventUpdateInput{Scope: backend.ScopeAuto}
-		in.Title = &last.Prev.Title
-		in.Start = &last.Prev.Start
-		in.End = &last.Prev.End
-		in.Location = &last.Prev.Location
-		in.Notes = &last.Prev.Notes
-		in.URL = &last.Prev.URL
-		in.AllDay = &last.Prev.AllDay
+		in := buildUpdateInputFromEvent(last.Prev)
 		if _, err := be.UpdateEvent(ctx, last.EventID, in); err != nil {
 			return historyEntry{}, nil, err
 		}
@@ -165,6 +229,104 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	if err := writeHistory(entries[:len(entries)-1]); err != nil {
 		return historyEntry{}, nil, err
 	}
+	redoEntries, err := readRedoHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
+	}
+	redoEntry.At = time.Now().UTC()
+	redoEntries = append(redoEntries, redoEntry)
+	if err := writeRedoHistory(redoEntries); err != nil {
+		return historyEntry{}, nil, err
+	}
 	meta["undone"] = true
 	return last, meta, nil
+}
+
+func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (historyEntry, map[string]any, error) {
+	redoEntries, err := readRedoHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
+	}
+	if len(redoEntries) == 0 {
+		return historyEntry{}, nil, fmt.Errorf("redo history is empty")
+	}
+	last := redoEntries[len(redoEntries)-1]
+	meta := map[string]any{"type": last.Type, "event_id": last.EventID}
+	if dryRun {
+		meta["dry_run"] = true
+		return last, meta, nil
+	}
+	applied := last
+	switch last.Type {
+	case "add":
+		if last.Created == nil {
+			return historyEntry{}, nil, fmt.Errorf("add redo requires created snapshot")
+		}
+		in := backend.EventCreateInput{
+			Calendar:       firstNonEmpty(last.Created.CalendarName, last.Created.CalendarID),
+			Title:          last.Created.Title,
+			Start:          last.Created.Start,
+			End:            last.Created.End,
+			Location:       last.Created.Location,
+			Notes:          last.Created.Notes,
+			URL:            last.Created.URL,
+			AllDay:         last.Created.AllDay,
+			ReminderOffset: nil,
+			RepeatRule:     "",
+		}
+		created, err := be.AddEvent(ctx, in)
+		if err != nil {
+			return historyEntry{}, nil, err
+		}
+		if created != nil {
+			applied.EventID = created.ID
+			applied.Created = created
+		}
+	case "delete":
+		if strings.TrimSpace(last.EventID) == "" {
+			return historyEntry{}, nil, fmt.Errorf("delete redo missing event id")
+		}
+		if err := be.DeleteEvent(ctx, last.EventID, backend.ScopeAuto); err != nil {
+			return historyEntry{}, nil, err
+		}
+	case "update":
+		if last.Next == nil {
+			return historyEntry{}, nil, fmt.Errorf("update redo requires next snapshot")
+		}
+		in := buildUpdateInputFromEvent(last.Next)
+		if _, err := be.UpdateEvent(ctx, last.EventID, in); err != nil {
+			return historyEntry{}, nil, err
+		}
+	default:
+		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
+	}
+	historyEntries, err := readHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
+	}
+	applied.At = time.Now().UTC()
+	historyEntries = append(historyEntries, applied)
+	if err := writeHistory(historyEntries); err != nil {
+		return historyEntry{}, nil, err
+	}
+	if err := writeRedoHistory(redoEntries[:len(redoEntries)-1]); err != nil {
+		return historyEntry{}, nil, err
+	}
+	meta["redone"] = true
+	return applied, meta, nil
+}
+
+func buildUpdateInputFromEvent(ev *contract.Event) backend.EventUpdateInput {
+	if ev == nil {
+		return backend.EventUpdateInput{Scope: backend.ScopeAuto}
+	}
+	in := backend.EventUpdateInput{Scope: backend.ScopeAuto}
+	in.Title = &ev.Title
+	in.Start = &ev.Start
+	in.End = &ev.End
+	in.Location = &ev.Location
+	in.Notes = &ev.Notes
+	in.URL = &ev.URL
+	in.AllDay = &ev.AllDay
+	return in
 }

@@ -1,0 +1,31 @@
+{
+  "command": "events.batch",
+  "data": [
+    {
+      "input": {
+        "AllDay": false,
+        "Calendar": "Work",
+        "End": "2026-02-20T09:30:00Z",
+        "Location": "",
+        "Notes": "",
+        "ReminderOffset": null,
+        "RepeatRule": "",
+        "Start": "2026-02-20T09:00:00Z",
+        "Title": "Plan",
+        "URL": ""
+      },
+      "line": 1,
+      "ok": true,
+      "op": "add",
+      "op_id": "op-0001-add"
+    }
+  ],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 1,
+    "dry_run": true,
+    "errors": 0
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

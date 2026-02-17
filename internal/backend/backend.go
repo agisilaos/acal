@@ -26,25 +26,30 @@ const (
 )
 
 type EventCreateInput struct {
-	Calendar string
-	Title    string
-	Start    time.Time
-	End      time.Time
-	Location string
-	Notes    string
-	URL      string
-	AllDay   bool
+	Calendar       string
+	Title          string
+	Start          time.Time
+	End            time.Time
+	Location       string
+	Notes          string
+	URL            string
+	AllDay         bool
+	ReminderOffset *time.Duration
+	RepeatRule     string
 }
 
 type EventUpdateInput struct {
-	Title    *string
-	Start    *time.Time
-	End      *time.Time
-	Location *string
-	Notes    *string
-	URL      *string
-	AllDay   *bool
-	Scope    RecurrenceScope
+	Title          *string
+	Start          *time.Time
+	End            *time.Time
+	Location       *string
+	Notes          *string
+	URL            *string
+	AllDay         *bool
+	Scope          RecurrenceScope
+	ReminderOffset *time.Duration
+	ClearReminder  bool
+	RepeatRule     *string
 }
 
 type Backend interface {

@@ -1,0 +1,10 @@
+{
+  "command": "queries.list",
+  "data": [],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 0
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

@@ -102,19 +102,62 @@ func TestJSONGolden(t *testing.T) {
 	t.Cleanup(func() { backendFactory = origFactory })
 
 	cases := []struct {
-		name string
-		args []string
+		name  string
+		setup func(*testing.T) []string
+		args  []string
 	}{
 		{name: "setup", args: []string{"setup", "--json"}},
 		{name: "today", args: []string{"today", "--day", "2026-02-10", "--tz", "UTC", "--json"}},
 		{name: "week_summary", args: []string{"week", "--of", "2026-02-11", "--tz", "UTC", "--week-start", "monday", "--summary", "--json"}},
 		{name: "month", args: []string{"month", "--month", "2026-02", "--tz", "UTC", "--json"}},
 		{name: "quick_add_dry_run", args: []string{"quick-add", "2026-02-18 09:15 Deep Work @Personal 45m", "--tz", "UTC", "--dry-run", "--json"}},
+		{name: "freebusy", args: []string{"freebusy", "--from", "2026-02-10", "--to", "2026-02-12", "--tz", "UTC", "--json"}},
+		{name: "slots", args: []string{"slots", "--from", "2026-02-10T09:00", "--to", "2026-02-10T12:00", "--between", "09:00-12:00", "--duration", "30m", "--step", "30m", "--tz", "UTC", "--json"}},
+		{name: "events_conflicts", args: []string{"events", "conflicts", "--from", "2026-02-10", "--to", "2026-02-12", "--tz", "UTC", "--json"}},
+		{name: "events_export", args: []string{"events", "export", "--from", "2026-02-15", "--to", "2026-02-16", "--tz", "UTC", "--json"}},
+		{
+			name: "events_import_dry_run",
+			setup: func(t *testing.T) []string {
+				path := filepath.Join(t.TempDir(), "in.ics")
+				raw := "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Imported\r\nDTSTART:20260220T090000Z\r\nDTEND:20260220T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+				if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+					t.Fatalf("write import fixture failed: %v", err)
+				}
+				return []string{path}
+			},
+			args: []string{"events", "import", "--file", "__PATH0__", "--calendar", "Work", "--dry-run", "--tz", "UTC", "--json"},
+		},
+		{
+			name: "events_batch_dry_run",
+			setup: func(t *testing.T) []string {
+				path := filepath.Join(t.TempDir(), "ops.jsonl")
+				content := "{\"op\":\"add\",\"calendar\":\"Work\",\"title\":\"Plan\",\"start\":\"2026-02-20T09:00\",\"duration\":\"30m\"}\n"
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					t.Fatalf("write batch fixture failed: %v", err)
+				}
+				return []string{path}
+			},
+			args: []string{"events", "batch", "--file", "__PATH0__", "--dry-run", "--tz", "UTC", "--json"},
+		},
+		{name: "history_list", args: []string{"history", "list", "--json"}},
+		{name: "queries_list", args: []string{"queries", "list", "--json"}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := runRootForJSONGolden(t, tc.args)
+			args := append([]string(nil), tc.args...)
+			if tc.setup != nil {
+				paths := tc.setup(t)
+				for i, p := range paths {
+					placeholder := "__PATH" + string(rune('0'+i)) + "__"
+					for j := range args {
+						if args[j] == placeholder {
+							args[j] = p
+						}
+					}
+				}
+			}
+			got := runRootForJSONGolden(t, args)
 			assertGoldenJSON(t, tc.name, got)
 		})
 	}

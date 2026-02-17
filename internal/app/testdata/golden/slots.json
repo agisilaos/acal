@@ -1,0 +1,38 @@
+{
+  "command": "slots",
+  "data": [
+    {
+      "end": "2026-02-10T09:30:00Z",
+      "minutes": 30,
+      "start": "2026-02-10T09:00:00Z"
+    },
+    {
+      "end": "2026-02-10T10:00:00Z",
+      "minutes": 30,
+      "start": "2026-02-10T09:30:00Z"
+    },
+    {
+      "end": "2026-02-10T11:00:00Z",
+      "minutes": 30,
+      "start": "2026-02-10T10:30:00Z"
+    },
+    {
+      "end": "2026-02-10T11:30:00Z",
+      "minutes": 30,
+      "start": "2026-02-10T11:00:00Z"
+    },
+    {
+      "end": "2026-02-10T12:00:00Z",
+      "minutes": 30,
+      "start": "2026-02-10T11:30:00Z"
+    }
+  ],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 5,
+    "duration_minutes": 30,
+    "events_scanned": 1
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

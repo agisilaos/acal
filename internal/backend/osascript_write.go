@@ -21,6 +21,11 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	allDay := boolToScript(in.AllDay)
 	startUnix := strconv.FormatInt(in.Start.Unix(), 10)
 	endUnix := strconv.FormatInt(in.End.Unix(), 10)
+	repeatText := strings.ToLower(strings.TrimSpace(in.RepeatRule))
+	reminderMins := "__ACAL_KEEP__"
+	if in.ReminderOffset != nil {
+		reminderMins = strconv.Itoa(int(in.ReminderOffset.Minutes()))
+	}
 	out, err := runAppleScript([]string{
 		`on run argv`,
 		`set calName to item 1 of argv`,
@@ -31,6 +36,8 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`set notesText to item 6 of argv`,
 		`set urlText to item 7 of argv`,
 		`set allDayText to item 8 of argv`,
+		`set repeatText to item 9 of argv`,
+		`set reminderText to item 10 of argv`,
 		`set epoch to date "1/1/1970 00:00:00"`,
 		`set startDate to (epoch + (startText as integer))`,
 		`set endDate to (epoch + (endText as integer))`,
@@ -46,10 +53,20 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`if locationText is not "" then set location of newEvent to locationText`,
 		`if notesText is not "" then set description of newEvent to notesText`,
 		`if urlText is not "" then set url of newEvent to urlText`,
+		`if repeatText is not "" then`,
+		`if repeatText starts with "daily" then set recurrence of newEvent to daily`,
+		`if repeatText starts with "weekly" then set recurrence of newEvent to weekly`,
+		`if repeatText starts with "monthly" then set recurrence of newEvent to monthly`,
+		`if repeatText starts with "yearly" then set recurrence of newEvent to yearly`,
+		`end if`,
+		`if reminderText is not "__ACAL_KEEP__" then`,
+		`delete every display alarm of newEvent`,
+		`make new display alarm at end of display alarms of newEvent with properties {trigger interval:(reminderText as integer)}`,
+		`end if`,
 		`return uid of newEvent as text`,
 		`end tell`,
 		`end run`,
-	}, in.Calendar, in.Title, startUnix, endUnix, in.Location, in.Notes, in.URL, allDay)
+	}, in.Calendar, in.Title, startUnix, endUnix, in.Location, in.Notes, in.URL, allDay, repeatText, reminderMins)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +132,18 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	if in.URL != nil {
 		url = *in.URL
 	}
+	repeatText := keep
+	if in.RepeatRule != nil {
+		repeatText = strings.ToLower(strings.TrimSpace(*in.RepeatRule))
+	}
+	reminderMins := keep
+	if in.ReminderOffset != nil {
+		reminderMins = strconv.Itoa(int(in.ReminderOffset.Minutes()))
+	}
+	clearReminder := "false"
+	if in.ClearReminder {
+		clearReminder = "true"
+	}
 	occUnix := "0"
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
@@ -132,6 +161,9 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`set notesText to item 8 of argv`,
 		`set urlText to item 9 of argv`,
 		`set allDayText to item 10 of argv`,
+		`set repeatText to item 11 of argv`,
+		`set reminderText to item 12 of argv`,
+		`set clearReminderText to item 13 of argv`,
 		`set epoch to date "1/1/1970 00:00:00"`,
 		`tell application "Calendar"`,
 		`set updatedUID to uidText`,
@@ -174,6 +206,21 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`set allday event of targetRef to false`,
 		`end if`,
 		`end if`,
+		`if repeatText is not "__ACAL_KEEP__" then`,
+		`if repeatText is "" then`,
+		`set recurrence of targetRef to no recurrence`,
+		`else`,
+		`if repeatText starts with "daily" then set recurrence of targetRef to daily`,
+		`if repeatText starts with "weekly" then set recurrence of targetRef to weekly`,
+		`if repeatText starts with "monthly" then set recurrence of targetRef to monthly`,
+		`if repeatText starts with "yearly" then set recurrence of targetRef to yearly`,
+		`end if`,
+		`end if`,
+		`if clearReminderText is "true" then delete every display alarm of targetRef`,
+		`if reminderText is not "__ACAL_KEEP__" then`,
+		`delete every display alarm of targetRef`,
+		`make new display alarm at end of display alarms of targetRef with properties {trigger interval:(reminderText as integer)}`,
+		`end if`,
 		`end repeat`,
 		`if scopeText is not "future" then exit repeat`,
 		`end if`,
@@ -182,7 +229,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`return updatedUID`,
 		`end tell`,
 		`end run`,
-	}, uid, string(scope), occUnix, title, start, end, location, notes, url, allDay)
+	}, uid, string(scope), occUnix, title, start, end, location, notes, url, allDay, repeatText, reminderMins, clearReminder)
 	if err != nil {
 		return nil, err
 	}

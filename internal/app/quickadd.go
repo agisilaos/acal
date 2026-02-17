@@ -62,7 +62,7 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				return Wrap(1, err)
 			}
 			if item != nil {
-				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID})
+				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
 			return p.Success(item, map[string]any{"count": 1}, nil)
 		},

@@ -1,0 +1,12 @@
+{
+  "command": "events.conflicts",
+  "data": [],
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 0,
+    "events_scanned": 2,
+    "include_all_day": false
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

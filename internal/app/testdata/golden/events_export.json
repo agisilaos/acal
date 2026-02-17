@@ -1,0 +1,13 @@
+{
+  "command": "events.export",
+  "data": {
+    "events": 0,
+    "ics": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//acal//EN\r\nCALSCALE:GREGORIAN\r\nEND:VCALENDAR\r\n"
+  },
+  "generated_at": "\u003cgenerated\u003e",
+  "meta": {
+    "count": 0
+  },
+  "schema_version": "v1",
+  "warnings": null
+}

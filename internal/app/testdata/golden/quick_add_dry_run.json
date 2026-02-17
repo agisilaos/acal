@@ -6,6 +6,8 @@
     "End": "2026-02-18T10:00:00Z",
     "Location": "",
     "Notes": "",
+    "ReminderOffset": null,
+    "RepeatRule": "",
     "Start": "2026-02-18T09:15:00Z",
     "Title": "Deep Work",
     "URL": ""

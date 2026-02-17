@@ -540,7 +540,7 @@ func TestEventsConflictsExcludesAllDayByDefault(t *testing.T) {
 	}
 }
 
-func TestEventsRemindDryRunSetsNotesPatch(t *testing.T) {
+func TestEventsRemindDryRunSetsReminderPatch(t *testing.T) {
 	fb := &scopeCaptureBackend{
 		getEvent: &contract.Event{
 			ID:       "evt@792417600",
@@ -587,10 +587,7 @@ func TestEventsRemindClearCallsUpdate(t *testing.T) {
 	if fb.updateCalls != 1 {
 		t.Fatalf("expected one update call, got %d", fb.updateCalls)
 	}
-	if fb.updateInput.Notes == nil {
-		t.Fatalf("expected notes patch")
-	}
-	if strings.Contains(*fb.updateInput.Notes, "acal:reminder=") {
-		t.Fatalf("expected reminder marker removed, got %q", *fb.updateInput.Notes)
+	if !fb.updateInput.ClearReminder {
+		t.Fatalf("expected clear reminder patch")
 	}
 }

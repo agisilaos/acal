@@ -273,46 +273,20 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --repeat like daily*5, weekly:mon,wed*6, monthly*3", 2)
 			}
-			starts := expandRepeat(startT, spec)
-			inputs := make([]backend.EventCreateInput, 0, len(starts))
-			for _, st := range starts {
-				cp := in
-				delta := endT.Sub(startT)
-				cp.Start = st
-				cp.End = st.Add(delta)
-				if spec.Frequency != "" {
-					cp.Notes = setRepeatMarker(cp.Notes, addRepeat)
-				}
-				inputs = append(inputs, cp)
+			if spec.Frequency != "" {
+				in.RepeatRule = strings.TrimSpace(addRepeat)
 			}
 			if addDryRun {
-				if len(inputs) == 1 {
-					return p.Success(inputs[0], map[string]any{"dry_run": true, "count": 1}, nil)
-				}
-				return p.Success(inputs, map[string]any{"dry_run": true, "count": len(inputs), "repeat": addRepeat}, nil)
+				return p.Success(in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
 			}
-			if len(inputs) == 1 {
-				item, err := be.AddEvent(context.Background(), inputs[0])
-				if err != nil {
-					return failWithHint(p, contract.ErrGeneric, err, "Check calendar name and permissions", 1)
-				}
-				if item != nil {
-					_ = appendHistory(historyEntry{Type: "add", EventID: item.ID})
-				}
-				return p.Success(item, map[string]any{"count": 1}, nil)
+			item, err := be.AddEvent(context.Background(), in)
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Check calendar name and permissions", 1)
 			}
-			created := make([]contract.Event, 0, len(inputs))
-			for _, one := range inputs {
-				item, addErr := be.AddEvent(context.Background(), one)
-				if addErr != nil {
-					return failWithHint(p, contract.ErrGeneric, addErr, "Series creation failed; retry with --dry-run to inspect", 1)
-				}
-				if item != nil {
-					created = append(created, *item)
-					_ = appendHistory(historyEntry{Type: "add", EventID: item.ID})
-				}
+			if item != nil {
+				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
-			return p.Success(created, map[string]any{"count": len(created), "repeat": addRepeat}, nil)
+			return p.Success(item, map[string]any{"count": 1, "repeat": addRepeat}, nil)
 		},
 	}
 	add.Flags().StringVar(&addCalendar, "calendar", "", "Calendar ID or name")
@@ -377,14 +351,8 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 					return failWithHint(p, contract.ErrInvalidUsage, specErr, "Use --repeat like daily*5 or weekly:mon,wed*6", 2)
 				}
 				_ = spec
-				baseNotes := ""
-				if patch.Notes != nil {
-					baseNotes = *patch.Notes
-				} else if current != nil {
-					baseNotes = current.Notes
-				}
-				notes := setRepeatMarker(baseNotes, upRepeat)
-				patch.Notes = &notes
+				r := strings.TrimSpace(upRepeat)
+				patch.RepeatRule = &r
 			}
 			if cmd.Flags().Changed("url") {
 				patch.URL = &upURL
@@ -424,7 +392,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
 			}
 			if current != nil {
-				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current})
+				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
 			}
 			return p.Success(item, map[string]any{"count": 1}, nil)
 		},
@@ -516,7 +484,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Move failed", 1)
 			}
-			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current})
+			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
 			return p.Success(item, map[string]any{"count": 1}, nil)
 		},
 	}
@@ -599,7 +567,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrGeneric, err, "Copy failed", 1)
 			}
 			if item != nil {
-				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID})
+				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
 			return p.Success(item, map[string]any{"count": 1}, nil)
 		},
@@ -692,20 +660,19 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, remindIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
 			}
-			notes := item.Notes
 			meta := map[string]any{"count": 1}
+			patch := backend.EventUpdateInput{Scope: backend.ScopeAuto}
 			if remindClear {
-				notes = clearReminderMarker(notes)
+				patch.ClearReminder = true
 				meta["cleared"] = true
 			} else {
 				offset, parseErr := normalizeReminderOffset(remindAt)
 				if parseErr != nil {
 					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use duration like -15m, 10m, 1h", 2)
 				}
-				notes = setReminderMarker(notes, offset)
+				patch.ReminderOffset = &offset
 				meta["offset"] = offset.String()
 			}
-			patch := backend.EventUpdateInput{Notes: &notes, Scope: backend.ScopeAuto}
 			if remindDryRun {
 				return p.Success(patch, meta, nil)
 			}
@@ -713,7 +680,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Reminder update failed", 1)
 			}
-			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: item})
+			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: item, Next: updated})
 			return p.Success(updated, meta, nil)
 		},
 	}

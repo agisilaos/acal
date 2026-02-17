@@ -61,6 +61,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 	var filePath, calendar string
 	var dryRun bool
+	var strict bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import events from ICS",
@@ -83,6 +84,9 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 			if len(items) == 0 {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("no importable VEVENT entries"), "Validate ICS content and DTSTART/DTEND fields", 2)
 			}
+			if strict && len(warnings) > 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("strict import rejected warnings"), "Fix ICS warnings or omit --strict", 2)
+			}
 			if dryRun {
 				return p.Success(items, map[string]any{"count": len(items), "dry_run": true, "warnings": len(warnings)}, warnings)
 			}
@@ -102,6 +106,7 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&filePath, "file", "", "ICS file path or - for stdin")
 	cmd.Flags().StringVar(&calendar, "calendar", "", "Target calendar for imported events")
 	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview import without writing")
+	cmd.Flags().BoolVar(&strict, "strict", false, "Treat parser warnings as errors")
 	return cmd
 }
 

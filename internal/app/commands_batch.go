@@ -32,6 +32,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	var filePath string
 	var dryRun bool
 	var continueOnError bool
+	var strict bool
 	cmd := &cobra.Command{
 		Use:   "batch",
 		Short: "Apply add/update/delete operations from JSONL",
@@ -42,6 +43,9 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 			}
 			if strings.TrimSpace(filePath) == "" {
 				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--file is required"), "Pass --file <path> or --file -", 2)
+			}
+			if strict {
+				continueOnError = false
 			}
 			raw, err := readTextInput(filePath)
 			if err != nil {
@@ -59,7 +63,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				var row batchLine
 				if err := json.Unmarshal([]byte(s), &row); err != nil {
 					errorsCount++
-					results = append(results, map[string]any{"line": i + 1, "ok": false, "error": "invalid json"})
+					results = append(results, map[string]any{"op_id": batchOpID(i+1, "parse"), "line": i + 1, "ok": false, "error": "invalid json"})
 					if !continueOnError {
 						break
 					}
@@ -68,12 +72,13 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				res, execErr := executeBatchLine(context.Background(), be, row, loc, dryRun)
 				if execErr != nil {
 					errorsCount++
-					results = append(results, map[string]any{"line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
+					results = append(results, map[string]any{"op_id": batchOpID(i+1, row.Op), "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
 					if !continueOnError {
 						break
 					}
 					continue
 				}
+				res["op_id"] = batchOpID(i+1, row.Op)
 				res["line"] = i + 1
 				res["ok"] = true
 				results = append(results, res)
@@ -89,6 +94,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&filePath, "file", "", "JSONL file path or - for stdin")
 	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview without writing")
 	cmd.Flags().BoolVar(&continueOnError, "continue-on-error", true, "Continue processing after row errors")
+	cmd.Flags().BoolVar(&strict, "strict", false, "Fail fast on first row error")
 	return cmd
 }
 
@@ -216,4 +222,8 @@ func resolveBatchEnd(row batchLine, start time.Time, loc *time.Location) (time.T
 		return start.Add(d), nil
 	}
 	return time.Time{}, fmt.Errorf("missing end or duration")
+}
+
+func batchOpID(line int, op string) string {
+	return fmt.Sprintf("op-%04d-%s", line, strings.ToLower(strings.TrimSpace(op)))
 }

@@ -107,3 +107,48 @@ func TestEventsImportDryRun(t *testing.T) {
 		t.Fatalf("expected no add calls in dry-run")
 	}
 }
+
+func TestEventsImportMalformedICS(t *testing.T) {
+	fb := &scopeCaptureBackend{}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	f := filepath.Join(t.TempDir(), "bad.ics")
+	raw := "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Broken\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	if err := os.WriteFile(f, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "import", "--file", f, "--calendar", "Work", "--json"})
+	err := cmd.Execute()
+	if code := ExitCode(err); code != 2 {
+		t.Fatalf("expected exit code 2, got %d err=%v", code, err)
+	}
+}
+
+func TestEventsImportStrictRejectsWarnings(t *testing.T) {
+	fb := &scopeCaptureBackend{}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	f := filepath.Join(t.TempDir(), "warn.ics")
+	raw := "BEGIN:VCALENDAR\r\n" +
+		"BEGIN:VEVENT\r\nSUMMARY:Good\r\nDTSTART:20260220T090000Z\r\nDTEND:20260220T100000Z\r\nEND:VEVENT\r\n" +
+		"BEGIN:VEVENT\r\nSUMMARY:Bad\r\nDTSTART:bad\r\nDTEND:bad\r\nEND:VEVENT\r\n" +
+		"END:VCALENDAR\r\n"
+	if err := os.WriteFile(f, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "import", "--file", f, "--calendar", "Work", "--strict", "--dry-run", "--json"})
+	err := cmd.Execute()
+	if code := ExitCode(err); code != 2 {
+		t.Fatalf("expected exit code 2, got %d err=%v", code, err)
+	}
+}

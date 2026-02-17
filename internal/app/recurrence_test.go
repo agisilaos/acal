@@ -47,7 +47,10 @@ func TestEventsAddRepeatCreatesSeries(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	if fb.addCalls != 3 {
-		t.Fatalf("expected 3 add calls, got %d", fb.addCalls)
+	if fb.addCalls != 1 {
+		t.Fatalf("expected 1 add call, got %d", fb.addCalls)
+	}
+	if got := fb.addInput.RepeatRule; got != "daily*3" {
+		t.Fatalf("expected repeat rule to be passed, got %q", got)
 	}
 }
