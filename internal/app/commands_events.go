@@ -367,6 +367,85 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	move.Flags().IntVar(&mvIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	move.Flags().BoolVarP(&mvDryRun, "dry-run", "n", false, "Preview without writing")
 
+	var cpTo, cpDuration, cpCalendar, cpTitle string
+	var cpDryRun bool
+	copyCmd := &cobra.Command{
+		Use:   "copy <event-id>",
+		Short: "Copy an event to a new time",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, be, ro, err := buildContext(cmd, opts, "events.copy")
+			if err != nil {
+				return err
+			}
+			if cpTo == "" {
+				err = errors.New("--to is required")
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> for the copied event start", 2)
+			}
+			current, err := be.GetEventByID(context.Background(), args[0])
+			if err != nil {
+				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
+			}
+			loc := resolveLocation(ro.TZ)
+			start, err := timeparse.ParseDateTime(cpTo, time.Now(), loc)
+			if err != nil {
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
+			}
+			duration := current.End.Sub(current.Start)
+			if cpDuration != "" {
+				duration, err = time.ParseDuration(cpDuration)
+				if err != nil || duration <= 0 {
+					if err == nil {
+						err = errors.New("--duration must be positive")
+					}
+					return failWithHint(p, contract.ErrInvalidUsage, err, "Use a positive duration like 30m or 1h", 2)
+				}
+			}
+			if duration <= 0 {
+				err = errors.New("source event has invalid duration")
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Pass --duration explicitly", 2)
+			}
+			calendar := cpCalendar
+			if calendar == "" {
+				calendar = current.CalendarName
+				if calendar == "" {
+					calendar = current.CalendarID
+				}
+			}
+			if calendar == "" {
+				err = errors.New("source event calendar is empty")
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Pass --calendar for the destination calendar", 2)
+			}
+			title := cpTitle
+			if title == "" {
+				title = current.Title
+			}
+			in := backend.EventCreateInput{
+				Calendar: calendar,
+				Title:    title,
+				Start:    start,
+				End:      start.Add(duration),
+				Location: current.Location,
+				Notes:    current.Notes,
+				URL:      current.URL,
+				AllDay:   current.AllDay,
+			}
+			if cpDryRun {
+				return p.Success(in, map[string]any{"dry_run": true}, nil)
+			}
+			item, err := be.AddEvent(context.Background(), in)
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Copy failed", 1)
+			}
+			return p.Success(item, map[string]any{"count": 1}, nil)
+		},
+	}
+	copyCmd.Flags().StringVar(&cpTo, "to", "", "New start datetime")
+	copyCmd.Flags().StringVar(&cpDuration, "duration", "", "Duration for copied event (defaults to source duration)")
+	copyCmd.Flags().StringVar(&cpCalendar, "calendar", "", "Destination calendar (defaults to source)")
+	copyCmd.Flags().StringVar(&cpTitle, "title", "", "Override copied title")
+	copyCmd.Flags().BoolVarP(&cpDryRun, "dry-run", "n", false, "Preview without writing")
+
 	var delForce, delDryRun bool
 	var delConfirm, delScope string
 	var delIfMatch int
@@ -423,7 +502,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	deleteCmd.Flags().IntVar(&delIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	deleteCmd.Flags().BoolVarP(&delDryRun, "dry-run", "n", false, "Preview without writing")
 
-	events.AddCommand(list, search, show, query, add, update, move, deleteCmd, newEventsQuickAddCmd(opts))
+	events.AddCommand(list, search, show, query, add, update, copyCmd, move, deleteCmd, newEventsQuickAddCmd(opts))
 	return events
 }
 

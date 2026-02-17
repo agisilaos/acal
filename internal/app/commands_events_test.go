@@ -16,10 +16,13 @@ import (
 type scopeCaptureBackend struct {
 	updateInput backend.EventUpdateInput
 	deleteScope backend.RecurrenceScope
+	addInput    backend.EventCreateInput
 	getEvent    *contract.Event
 	getErr      error
+	addErr      error
 	updateErr   error
 	deleteErr   error
+	addCalls    int
 	updateCalls int
 	deleteCalls int
 }
@@ -43,8 +46,13 @@ func (b *scopeCaptureBackend) GetEventByID(context.Context, string) (*contract.E
 	return &contract.Event{ID: "evt@792417600", Start: time.Now(), Sequence: 1}, nil
 }
 
-func (b *scopeCaptureBackend) AddEvent(context.Context, backend.EventCreateInput) (*contract.Event, error) {
-	return nil, nil
+func (b *scopeCaptureBackend) AddEvent(_ context.Context, in backend.EventCreateInput) (*contract.Event, error) {
+	b.addCalls++
+	b.addInput = in
+	if b.addErr != nil {
+		return nil, b.addErr
+	}
+	return &contract.Event{ID: "new-evt@792417600"}, nil
 }
 
 func (b *scopeCaptureBackend) UpdateEvent(_ context.Context, id string, in backend.EventUpdateInput) (*contract.Event, error) {
@@ -344,6 +352,104 @@ func TestEventsMoveValidationMatrix(t *testing.T) {
 			}
 			if tc.backend.updateCalls != tc.wantUpdateCalls {
 				t.Fatalf("update calls mismatch: got=%d want=%d", tc.backend.updateCalls, tc.wantUpdateCalls)
+			}
+		})
+	}
+}
+
+func TestEventsCopyPassesAddInput(t *testing.T) {
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:           "evt@792417600",
+			CalendarName: "Work",
+			Title:        "Planning",
+			Start:        base,
+			End:          base.Add(30 * time.Minute),
+			Location:     "Room 4A",
+			Notes:        "Bring notes",
+			URL:          "https://example.com",
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "copy", "evt@792417600", "--to", "2026-02-21T09:00", "--tz", "UTC", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if fb.addCalls != 1 {
+		t.Fatalf("expected one add call, got %d", fb.addCalls)
+	}
+	if got, want := fb.addInput.Start.Format(time.RFC3339), "2026-02-21T09:00:00Z"; got != want {
+		t.Fatalf("start mismatch: got=%s want=%s", got, want)
+	}
+	if got, want := fb.addInput.End.Format(time.RFC3339), "2026-02-21T09:30:00Z"; got != want {
+		t.Fatalf("end mismatch: got=%s want=%s", got, want)
+	}
+	if fb.addInput.Calendar != "Work" {
+		t.Fatalf("calendar mismatch: %q", fb.addInput.Calendar)
+	}
+}
+
+func TestEventsCopyValidationMatrix(t *testing.T) {
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		args         []string
+		backend      *scopeCaptureBackend
+		wantExitCode int
+		wantAddCalls int
+	}{
+		{
+			name:         "missing to",
+			args:         []string{"events", "copy", "evt@792417600", "--json"},
+			backend:      &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute), CalendarName: "Work"}},
+			wantExitCode: 2,
+			wantAddCalls: 0,
+		},
+		{
+			name:         "source not found",
+			args:         []string{"events", "copy", "evt@792417600", "--to", "2026-02-21T09:00", "--json", "--tz", "UTC"},
+			backend:      &scopeCaptureBackend{getErr: errors.New("missing")},
+			wantExitCode: 4,
+			wantAddCalls: 0,
+		},
+		{
+			name:         "invalid duration",
+			args:         []string{"events", "copy", "evt@792417600", "--to", "2026-02-21T09:00", "--duration", "0m", "--json", "--tz", "UTC"},
+			backend:      &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute), CalendarName: "Work"}},
+			wantExitCode: 2,
+			wantAddCalls: 0,
+		},
+		{
+			name:         "dry-run",
+			args:         []string{"events", "copy", "evt@792417600", "--to", "2026-02-21T09:00", "--dry-run", "--json", "--tz", "UTC"},
+			backend:      &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute), CalendarName: "Work"}},
+			wantExitCode: 0,
+			wantAddCalls: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			origFactory := backendFactory
+			backendFactory = func(string) (backend.Backend, error) { return tc.backend, nil }
+			t.Cleanup(func() { backendFactory = origFactory })
+
+			cmd := NewRootCommand()
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(tc.args)
+			err := cmd.Execute()
+			if got := ExitCode(err); got != tc.wantExitCode {
+				t.Fatalf("exit code mismatch: got=%d want=%d err=%v", got, tc.wantExitCode, err)
+			}
+			if tc.backend.addCalls != tc.wantAddCalls {
+				t.Fatalf("add calls mismatch: got=%d want=%d", tc.backend.addCalls, tc.wantAddCalls)
 			}
 		})
 	}
