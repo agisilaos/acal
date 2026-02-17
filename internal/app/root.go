@@ -260,6 +260,25 @@ func readTextInput(path string) (string, error) {
 	return string(b), nil
 }
 
+func stdinInteractive() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func promptConfirmID(in io.Reader, out io.Writer, expected string) (bool, error) {
+	if _, err := fmt.Fprintf(out, "Type event ID to confirm delete: "); err != nil {
+		return false, err
+	}
+	var entered string
+	if _, err := fmt.Fscanln(in, &entered); err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(entered) == strings.TrimSpace(expected), nil
+}
+
 func conflictCount(vals ...bool) int {
 	total := 0
 	for _, v := range vals {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -134,5 +135,30 @@ func TestParseRecurrenceScope(t *testing.T) {
 		if got != tc.want {
 			t.Fatalf("parseRecurrenceScope(%q): got=%q want=%q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestPromptConfirmID(t *testing.T) {
+	var out bytes.Buffer
+	ok, err := promptConfirmID(bytes.NewBufferString("evt-1\n"), &out, "evt-1")
+	if err != nil {
+		t.Fatalf("promptConfirmID error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected confirmation to match")
+	}
+	if got := out.String(); got != "Type event ID to confirm delete: " {
+		t.Fatalf("unexpected prompt output: %q", got)
+	}
+}
+
+func TestPromptConfirmIDMismatch(t *testing.T) {
+	var out bytes.Buffer
+	ok, err := promptConfirmID(bytes.NewBufferString("evt-2\n"), &out, "evt-1")
+	if err != nil {
+		t.Fatalf("promptConfirmID error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected mismatch")
 	}
 }

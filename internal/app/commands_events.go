@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/agis/acal/internal/backend"
@@ -325,14 +326,21 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return Wrap(4, getErr)
 			}
 			if !delForce && delConfirm != args[0] {
-				if ro.NoInput {
+				if ro.NoInput || !stdinInteractive() {
 					err = errors.New("non-interactive delete requires --force or --confirm <event-id>")
 					_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Add --confirm exactly matching the event ID")
 					return Wrap(2, err)
 				}
-				err = errors.New("delete requires --force or --confirm <event-id>")
-				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Pass --force or --confirm <event-id>")
-				return Wrap(2, err)
+				ok, promptErr := promptConfirmID(os.Stdin, cmd.ErrOrStderr(), args[0])
+				if promptErr != nil {
+					_ = p.Error(contract.ErrInvalidUsage, promptErr.Error(), "Use --force or --confirm <event-id> in non-interactive mode")
+					return Wrap(2, promptErr)
+				}
+				if !ok {
+					err = errors.New("delete confirmation mismatch")
+					_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --force, or retry and enter the exact event ID")
+					return Wrap(2, err)
+				}
 			}
 			scope, err := parseRecurrenceScope(delScope)
 			if err != nil {

@@ -94,6 +94,7 @@ Release scripts:
 ./acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
 ./acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1
 ./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
+./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
 ## Notes
@@ -101,6 +102,9 @@ Release scripts:
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
+- Delete safety model:
+  - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
+  - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.
 - Recurring write scope:
   - `--scope auto`: if ID is `<uid>@<occurrence>`, targets one occurrence; otherwise targets full series.
   - `--scope this`: target one occurrence (requires occurrence-style ID).
