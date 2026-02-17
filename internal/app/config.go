@@ -128,6 +128,9 @@ func applyEnv(dst *globalOptions) {
 			dst.NoInput = b
 		}
 	}
+	if strings.TrimSpace(os.Getenv("NO_COLOR")) != "" || strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
+		dst.NoColor = true
+	}
 }
 
 func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {

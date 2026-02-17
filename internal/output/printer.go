@@ -26,6 +26,7 @@ type Printer struct {
 	Command       string
 	Fields        []string
 	Quiet         bool
+	NoColor       bool
 	SchemaVersion string
 	Out           io.Writer
 	Err           io.Writer
@@ -73,10 +74,10 @@ func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
 		return enc.Encode(env)
 	}
 	if hint != "" {
-		_, _ = fmt.Fprintf(p.errWriter(), "error: %s\nhint: %s\n", message, hint)
+		_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\nhint: %s\n", p.errorLabel(), message, hint)
 		return nil
 	}
-	_, _ = fmt.Fprintf(p.errWriter(), "error: %s\n", message)
+	_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\n", p.errorLabel(), message)
 	return nil
 }
 
@@ -119,6 +120,31 @@ func (p Printer) errWriter() io.Writer {
 		return p.Err
 	}
 	return os.Stderr
+}
+
+func (p Printer) errorLabel() string {
+	if p.colorsEnabled() {
+		return "\x1b[31merror\x1b[0m"
+	}
+	return "error"
+}
+
+func (p Printer) colorsEnabled() bool {
+	if p.NoColor {
+		return false
+	}
+	if strings.TrimSpace(os.Getenv("NO_COLOR")) != "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
+		return false
+	}
+	if f, ok := p.errWriter().(*os.File); ok {
+		if info, err := f.Stat(); err == nil {
+			return info.Mode()&os.ModeCharDevice != 0
+		}
+	}
+	return false
 }
 
 func flatten(v any, fields []string) string {

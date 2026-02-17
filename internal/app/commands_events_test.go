@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,5 +80,24 @@ func TestEventsDeletePassesScope(t *testing.T) {
 	}
 	if fb.deleteScope != backend.ScopeSeries {
 		t.Fatalf("scope mismatch: got=%q want=%q", fb.deleteScope, backend.ScopeSeries)
+	}
+}
+
+func TestEventsVerboseEmitsDiagnostics(t *testing.T) {
+	fb := &scopeCaptureBackend{}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var stderr bytes.Buffer
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"events", "list", "--from", "today", "--to", "+1d", "--verbose", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if got := stderr.String(); !strings.Contains(got, "acal: command=events.list") {
+		t.Fatalf("expected verbose diagnostics, got %q", got)
 	}
 }

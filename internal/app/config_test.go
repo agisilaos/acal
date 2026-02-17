@@ -89,6 +89,18 @@ func TestResolveGlobalOptionsProfile(t *testing.T) {
 	}
 }
 
+func TestResolveGlobalOptionsNoColorEnv(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	defaults := &globalOptions{Profile: "default", Backend: "osascript", SchemaVersion: "v1"}
+	resolved, err := resolveGlobalOptions(newTestCmd(), defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolved.NoColor {
+		t.Fatalf("expected no-color when NO_COLOR is set")
+	}
+}
+
 func newTestCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().Bool("json", false, "")

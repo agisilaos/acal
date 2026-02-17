@@ -41,6 +41,8 @@ acal version
 - `--json` envelope output for agents
 - `--jsonl` streaming object-per-line output
 - `--plain` stable line-based output
+- `--verbose` diagnostics to stderr (resolved command/backend/mode/profile)
+- `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
 
 ## Config and precedence
 
@@ -90,6 +92,7 @@ Release scripts:
 ./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
 ./acal events quick-add "2026-02-18 09:15 Deep Work @Personal 45m"
 ./acal events list --from today --to +7d --json
+./acal events list --from today --to +7d --verbose --json
 ./acal events query --from today --to +14d --where 'title~sleep' --sort start --order asc --plain --fields id,title,start,end
 ./acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
 ./acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1

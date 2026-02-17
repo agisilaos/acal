@@ -103,6 +103,7 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		Command:       command,
 		Fields:        splitCSV(resolved.Fields),
 		Quiet:         resolved.Quiet,
+		NoColor:       resolved.NoColor,
 		SchemaVersion: resolved.SchemaVersion,
 		Out:           cmd.OutOrStdout(),
 		Err:           cmd.ErrOrStderr(),
@@ -112,6 +113,9 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 	if err != nil {
 		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use --backend osascript")
 		return printer, nil, nil, Wrap(2, err)
+	}
+	if resolved.Verbose {
+		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile)
 	}
 	return printer, be, resolved, nil
 }
