@@ -1,3 +1,4 @@
 /acal
 /.tmp-acal
 /dist
+.DS_Store
