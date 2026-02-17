@@ -28,6 +28,11 @@ type batchLine struct {
 	Scope    string  `json:"scope,omitempty"`
 }
 
+type batchExecResult struct {
+	View    map[string]any
+	History *historyEntry
+}
+
 func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	var filePath string
 	var dryRun bool
@@ -52,6 +57,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check file path or stdin", 2)
 			}
 			loc := resolveLocation(ro.TZ)
+			txID := batchTxID()
 			lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
 			results := make([]map[string]any, 0)
 			errorsCount := 0
@@ -63,27 +69,42 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				var row batchLine
 				if err := json.Unmarshal([]byte(s), &row); err != nil {
 					errorsCount++
-					results = append(results, map[string]any{"op_id": batchOpID(i+1, "parse"), "line": i + 1, "ok": false, "error": "invalid json"})
+					results = append(results, map[string]any{"tx_id": txID, "op_id": batchOpID(i+1, "parse"), "line": i + 1, "ok": false, "error": "invalid json"})
 					if !continueOnError {
 						break
 					}
 					continue
 				}
-				res, execErr := executeBatchLine(context.Background(), be, row, loc, dryRun)
+				opID := batchOpID(i+1, row.Op)
+				execRes, execErr := executeBatchLine(context.Background(), be, row, loc, dryRun)
 				if execErr != nil {
 					errorsCount++
-					results = append(results, map[string]any{"op_id": batchOpID(i+1, row.Op), "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
+					results = append(results, map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
 					if !continueOnError {
 						break
 					}
 					continue
 				}
+				if !dryRun && execRes.History != nil {
+					execRes.History.TxID = txID
+					execRes.History.OpID = opID
+					if histErr := appendHistory(*execRes.History); histErr != nil {
+						errorsCount++
+						results = append(results, map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": "failed to append history"})
+						if !continueOnError {
+							break
+						}
+						continue
+					}
+				}
+				res := execRes.View
+				res["tx_id"] = txID
 				res["op_id"] = batchOpID(i+1, row.Op)
 				res["line"] = i + 1
 				res["ok"] = true
 				results = append(results, res)
 			}
-			meta := map[string]any{"count": len(results), "errors": errorsCount, "dry_run": dryRun}
+			meta := map[string]any{"count": len(results), "errors": errorsCount, "dry_run": dryRun, "tx_id": txID}
 			if errorsCount > 0 {
 				_ = p.Success(results, meta, nil)
 				return Wrap(1, fmt.Errorf("batch completed with %d error(s)", errorsCount))
@@ -98,19 +119,19 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, loc *time.Location, dryRun bool) (map[string]any, error) {
+func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, loc *time.Location, dryRun bool) (batchExecResult, error) {
 	switch strings.ToLower(strings.TrimSpace(row.Op)) {
 	case "add":
 		if strings.TrimSpace(row.Calendar) == "" || row.Title == nil || row.Start == nil {
-			return nil, fmt.Errorf("add requires calendar, title, start")
+			return batchExecResult{}, fmt.Errorf("add requires calendar, title, start")
 		}
 		start, err := timeparse.ParseDateTime(*row.Start, time.Now(), loc)
 		if err != nil {
-			return nil, fmt.Errorf("invalid add.start")
+			return batchExecResult{}, fmt.Errorf("invalid add.start")
 		}
 		end, err := resolveBatchEnd(row, start, loc)
 		if err != nil {
-			return nil, err
+			return batchExecResult{}, err
 		}
 		in := backend.EventCreateInput{Calendar: row.Calendar, Title: *row.Title, Start: start, End: end}
 		if row.Location != nil {
@@ -126,20 +147,24 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 			in.AllDay = *row.AllDay
 		}
 		if dryRun {
-			return map[string]any{"op": "add", "input": in}, nil
+			return batchExecResult{View: map[string]any{"op": "add", "input": in}}, nil
 		}
 		ev, err := be.AddEvent(ctx, in)
 		if err != nil {
-			return nil, err
+			return batchExecResult{}, err
 		}
-		return map[string]any{"op": "add", "id": ev.ID}, nil
+		res := batchExecResult{View: map[string]any{"op": "add", "id": ev.ID}}
+		if ev != nil {
+			res.History = &historyEntry{Type: "add", EventID: ev.ID, Created: ev}
+		}
+		return res, nil
 	case "update":
 		if strings.TrimSpace(row.ID) == "" {
-			return nil, fmt.Errorf("update requires id")
+			return batchExecResult{}, fmt.Errorf("update requires id")
 		}
 		scope, err := parseRecurrenceScope(row.Scope)
 		if err != nil {
-			return nil, err
+			return batchExecResult{}, err
 		}
 		in := backend.EventUpdateInput{Scope: scope}
 		if row.Title != nil {
@@ -160,7 +185,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		if row.Start != nil {
 			ts, parseErr := timeparse.ParseDateTime(*row.Start, time.Now(), loc)
 			if parseErr != nil {
-				return nil, fmt.Errorf("invalid update.start")
+				return batchExecResult{}, fmt.Errorf("invalid update.start")
 			}
 			in.Start = &ts
 		}
@@ -171,35 +196,49 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 			}
 			end, endErr := resolveBatchEnd(row, base, loc)
 			if endErr != nil {
-				return nil, endErr
+				return batchExecResult{}, endErr
 			}
 			in.End = &end
 		}
 		if dryRun {
-			return map[string]any{"op": "update", "id": row.ID, "input": in}, nil
+			return batchExecResult{View: map[string]any{"op": "update", "id": row.ID, "input": in}}, nil
 		}
-		_, err = be.UpdateEvent(ctx, row.ID, in)
+		prev, err := be.GetEventByID(ctx, row.ID)
 		if err != nil {
-			return nil, err
+			return batchExecResult{}, fmt.Errorf("unable to snapshot event before update: %w", err)
 		}
-		return map[string]any{"op": "update", "id": row.ID}, nil
+		next, err := be.UpdateEvent(ctx, row.ID, in)
+		if err != nil {
+			return batchExecResult{}, err
+		}
+		return batchExecResult{
+			View:    map[string]any{"op": "update", "id": row.ID},
+			History: &historyEntry{Type: "update", EventID: row.ID, Prev: prev, Next: next},
+		}, nil
 	case "delete":
 		if strings.TrimSpace(row.ID) == "" {
-			return nil, fmt.Errorf("delete requires id")
+			return batchExecResult{}, fmt.Errorf("delete requires id")
 		}
 		scope, err := parseRecurrenceScope(row.Scope)
 		if err != nil {
-			return nil, err
+			return batchExecResult{}, err
 		}
 		if dryRun {
-			return map[string]any{"op": "delete", "id": row.ID, "scope": scope}, nil
+			return batchExecResult{View: map[string]any{"op": "delete", "id": row.ID, "scope": scope}}, nil
+		}
+		ev, err := be.GetEventByID(ctx, row.ID)
+		if err != nil {
+			return batchExecResult{}, fmt.Errorf("unable to snapshot event before delete: %w", err)
 		}
 		if err := be.DeleteEvent(ctx, row.ID, scope); err != nil {
-			return nil, err
+			return batchExecResult{}, err
 		}
-		return map[string]any{"op": "delete", "id": row.ID}, nil
+		return batchExecResult{
+			View:    map[string]any{"op": "delete", "id": row.ID},
+			History: &historyEntry{Type: "delete", EventID: row.ID, Deleted: ev},
+		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported op: %s", row.Op)
+		return batchExecResult{}, fmt.Errorf("unsupported op: %s", row.Op)
 	}
 }
 
@@ -226,4 +265,8 @@ func resolveBatchEnd(row batchLine, start time.Time, loc *time.Location) (time.T
 
 func batchOpID(line int, op string) string {
 	return fmt.Sprintf("op-%04d-%s", line, strings.ToLower(strings.TrimSpace(op)))
+}
+
+func batchTxID() string {
+	return fmt.Sprintf("tx-%d", time.Now().UTC().UnixNano())
 }

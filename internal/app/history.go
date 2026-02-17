@@ -16,6 +16,8 @@ import (
 type historyEntry struct {
 	At      time.Time       `json:"at"`
 	Type    string          `json:"type"`
+	TxID    string          `json:"tx_id,omitempty"`
+	OpID    string          `json:"op_id,omitempty"`
 	EventID string          `json:"event_id,omitempty"`
 	Prev    *contract.Event `json:"prev,omitempty"`
 	Next    *contract.Event `json:"next,omitempty"`

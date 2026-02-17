@@ -71,6 +71,7 @@ Recommended automation patterns:
   - `acal events add ... --dry-run --json`
   - `acal events batch --file ops.jsonl --dry-run --strict --json`
   - `acal events import --file calendar.ics --calendar Work --dry-run --strict --json`
+  - `events.batch` responses include stable `tx_id` and per-row `op_id`.
 - Idempotent orchestration:
   - save named filters with `acal queries save <name> ...`
   - execute with `acal queries run <name> --json`
@@ -173,7 +174,7 @@ Release scripts:
 - Persistence files (under config dir, usually `~/.config/acal/`):
   - `config.toml`: runtime defaults/profiles.
   - `history.jsonl`: append-only write history for undo.
-    - JSONL schema: `{"at","type","event_id","prev","next","created","deleted"}`
+    - JSONL schema: `{"at","type","tx_id","op_id","event_id","prev","next","created","deleted"}`
   - `redo.jsonl`: redo stack populated by `history undo`.
     - JSONL schema: same as `history.jsonl`.
   - `queries.json`: saved query aliases.

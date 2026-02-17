@@ -221,11 +221,29 @@ func normalizeEnvelopeJSON(t *testing.T, raw []byte) string {
 	if _, ok := obj["generated_at"]; ok {
 		obj["generated_at"] = "<generated>"
 	}
+	normalizeDynamicKeys(obj)
 	out, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
 		t.Fatalf("json marshal failed: %v", err)
 	}
 	return string(out) + "\n"
+}
+
+func normalizeDynamicKeys(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, child := range x {
+			if k == "tx_id" {
+				x[k] = "<tx>"
+				continue
+			}
+			normalizeDynamicKeys(child)
+		}
+	case []any:
+		for _, child := range x {
+			normalizeDynamicKeys(child)
+		}
+	}
 }
 
 func assertGoldenJSON(t *testing.T, name, got string) {

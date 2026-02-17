@@ -17,14 +17,16 @@
       "line": 1,
       "ok": true,
       "op": "add",
-      "op_id": "op-0001-add"
+      "op_id": "op-0001-add",
+      "tx_id": "\u003ctx\u003e"
     }
   ],
   "generated_at": "\u003cgenerated\u003e",
   "meta": {
     "count": 1,
     "dry_run": true,
-    "errors": 0
+    "errors": 0,
+    "tx_id": "\u003ctx\u003e"
   },
   "schema_version": "v1",
   "warnings": null
