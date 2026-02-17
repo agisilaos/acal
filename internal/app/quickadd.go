@@ -61,6 +61,9 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
 				return Wrap(1, err)
 			}
+			if item != nil {
+				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID})
+			}
 			return p.Success(item, map[string]any{"count": 1}, nil)
 		},
 	}

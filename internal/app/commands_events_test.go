@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -20,8 +21,11 @@ type scopeCaptureBackend struct {
 	getEvent    *contract.Event
 	getErr      error
 	addErr      error
+	listErr     error
 	updateErr   error
 	deleteErr   error
+	events      []contract.Event
+	lastFilter  backend.EventFilter
 	addCalls    int
 	updateCalls int
 	deleteCalls int
@@ -36,7 +40,10 @@ func (b *scopeCaptureBackend) ListCalendars(context.Context) ([]contract.Calenda
 }
 
 func (b *scopeCaptureBackend) ListEvents(context.Context, backend.EventFilter) ([]contract.Event, error) {
-	return nil, nil
+	if b.listErr != nil {
+		return nil, b.listErr
+	}
+	return b.events, nil
 }
 
 func (b *scopeCaptureBackend) GetEventByID(context.Context, string) (*contract.Event, error) {
@@ -452,5 +459,138 @@ func TestEventsCopyValidationMatrix(t *testing.T) {
 				t.Fatalf("add calls mismatch: got=%d want=%d", tc.backend.addCalls, tc.wantAddCalls)
 			}
 		})
+	}
+}
+
+func TestEventsConflictsJSON(t *testing.T) {
+	base := time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC)
+	fb := &scopeCaptureBackend{events: []contract.Event{
+		{ID: "e1", Title: "Focus", CalendarName: "Work", Start: base, End: base.Add(60 * time.Minute)},
+		{ID: "e2", Title: "Standup", CalendarName: "Work", Start: base.Add(30 * time.Minute), End: base.Add(90 * time.Minute)},
+		{ID: "e3", Title: "Lunch", CalendarName: "Personal", Start: base.Add(2 * time.Hour), End: base.Add(3 * time.Hour)},
+	}}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "conflicts", "--from", "2026-02-20", "--to", "2026-02-21", "--tz", "UTC", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+
+	var got struct {
+		Command string `json:"command"`
+		Data    []struct {
+			LeftID         string `json:"left_id"`
+			RightID        string `json:"right_id"`
+			OverlapMinutes int64  `json:"overlap_minutes"`
+		} `json:"data"`
+		Meta map[string]any `json:"meta"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal failed: %v\nraw=%s", err, stdout.String())
+	}
+	if got.Command != "events.conflicts" {
+		t.Fatalf("command mismatch: %q", got.Command)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one conflict, got %d", len(got.Data))
+	}
+	if got.Data[0].LeftID != "e1" || got.Data[0].RightID != "e2" {
+		t.Fatalf("unexpected pair: %+v", got.Data[0])
+	}
+	if got.Data[0].OverlapMinutes != 30 {
+		t.Fatalf("unexpected overlap minutes: %d", got.Data[0].OverlapMinutes)
+	}
+	if gotCount, ok := got.Meta["count"].(float64); !ok || int(gotCount) != 1 {
+		t.Fatalf("unexpected meta count: %#v", got.Meta["count"])
+	}
+}
+
+func TestEventsConflictsExcludesAllDayByDefault(t *testing.T) {
+	base := time.Date(2026, 2, 20, 0, 0, 0, 0, time.UTC)
+	fb := &scopeCaptureBackend{events: []contract.Event{
+		{ID: "e1", Title: "OOO", CalendarName: "Work", AllDay: true, Start: base, End: base.Add(24 * time.Hour)},
+		{ID: "e2", Title: "Standup", CalendarName: "Work", Start: base.Add(9 * time.Hour), End: base.Add(10 * time.Hour)},
+	}}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "conflicts", "--from", "2026-02-20", "--to", "2026-02-21", "--tz", "UTC", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	var got struct {
+		Data []any `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(got.Data) != 0 {
+		t.Fatalf("expected zero conflicts, got %d", len(got.Data))
+	}
+}
+
+func TestEventsRemindDryRunSetsNotesPatch(t *testing.T) {
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:       "evt@792417600",
+			Notes:    "existing",
+			Sequence: 2,
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "remind", "evt@792417600", "--at", "15m", "--dry-run", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if fb.updateCalls != 0 {
+		t.Fatalf("expected no update calls in dry-run")
+	}
+}
+
+func TestEventsRemindClearCallsUpdate(t *testing.T) {
+	notes := "foo\nacal:reminder=-15m\nbar"
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:       "evt@792417600",
+			Notes:    notes,
+			Sequence: 1,
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "remind", "evt@792417600", "--clear", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if fb.updateCalls != 1 {
+		t.Fatalf("expected one update call, got %d", fb.updateCalls)
+	}
+	if fb.updateInput.Notes == nil {
+		t.Fatalf("expected notes patch")
+	}
+	if strings.Contains(*fb.updateInput.Notes, "acal:reminder=") {
+		t.Fatalf("expected reminder marker removed, got %q", *fb.updateInput.Notes)
 	}
 }
