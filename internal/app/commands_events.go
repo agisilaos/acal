@@ -679,6 +679,22 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Reminder update failed", 1)
 			}
+			observed, verifyErr := be.GetReminderOffset(context.Background(), args[0])
+			if verifyErr != nil {
+				return failWithHint(p, contract.ErrGeneric, verifyErr, "Reminder updated but verification failed; retry `acal events show <id>`", 1)
+			}
+			if remindClear {
+				if observed != nil {
+					return failWithHint(p, contract.ErrGeneric, errors.New("reminder clear verification failed"), "Reminder still present after clear operation", 1)
+				}
+				meta["verified"] = true
+			}
+			if patch.ReminderOffset != nil {
+				if observed == nil || *observed != *patch.ReminderOffset {
+					return failWithHint(p, contract.ErrGeneric, errors.New("reminder offset verification failed"), "Observed reminder does not match requested offset", 1)
+				}
+				meta["verified"] = true
+			}
 			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: item, Next: updated})
 			return p.Success(updated, meta, nil)
 		},

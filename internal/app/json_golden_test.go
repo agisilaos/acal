@@ -35,6 +35,10 @@ func (f *fakeBackend) GetEventByID(context.Context, string) (*contract.Event, er
 	return nil, nil
 }
 
+func (f *fakeBackend) GetReminderOffset(context.Context, string) (*time.Duration, error) {
+	return nil, nil
+}
+
 func (f *fakeBackend) AddEvent(context.Context, backend.EventCreateInput) (*contract.Event, error) {
 	return nil, nil
 }

@@ -19,7 +19,9 @@ type scopeCaptureBackend struct {
 	deleteScope backend.RecurrenceScope
 	addInput    backend.EventCreateInput
 	getEvent    *contract.Event
+	reminder    *time.Duration
 	getErr      error
+	remindErr   error
 	addErr      error
 	listErr     error
 	updateErr   error
@@ -53,6 +55,13 @@ func (b *scopeCaptureBackend) GetEventByID(context.Context, string) (*contract.E
 	return &contract.Event{ID: "evt@792417600", Start: time.Now(), Sequence: 1}, nil
 }
 
+func (b *scopeCaptureBackend) GetReminderOffset(context.Context, string) (*time.Duration, error) {
+	if b.remindErr != nil {
+		return nil, b.remindErr
+	}
+	return b.reminder, nil
+}
+
 func (b *scopeCaptureBackend) AddEvent(_ context.Context, in backend.EventCreateInput) (*contract.Event, error) {
 	b.addCalls++
 	b.addInput = in
@@ -65,6 +74,13 @@ func (b *scopeCaptureBackend) AddEvent(_ context.Context, in backend.EventCreate
 func (b *scopeCaptureBackend) UpdateEvent(_ context.Context, id string, in backend.EventUpdateInput) (*contract.Event, error) {
 	b.updateCalls++
 	b.updateInput = in
+	if in.ClearReminder {
+		b.reminder = nil
+	}
+	if in.ReminderOffset != nil {
+		d := *in.ReminderOffset
+		b.reminder = &d
+	}
 	if b.updateErr != nil {
 		return nil, b.updateErr
 	}
@@ -589,5 +605,53 @@ func TestEventsRemindClearCallsUpdate(t *testing.T) {
 	}
 	if !fb.updateInput.ClearReminder {
 		t.Fatalf("expected clear reminder patch")
+	}
+}
+
+func TestEventsRemindSetVerifiesReadback(t *testing.T) {
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:       "evt@792417600",
+			Sequence: 1,
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "remind", "evt@792417600", "--at", "15m", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if fb.updateCalls != 1 {
+		t.Fatalf("expected one update call, got %d", fb.updateCalls)
+	}
+	if fb.updateInput.ReminderOffset == nil {
+		t.Fatalf("expected reminder offset patch")
+	}
+}
+
+func TestEventsRemindVerificationFailure(t *testing.T) {
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:       "evt@792417600",
+			Sequence: 1,
+		},
+		remindErr: errors.New("readback failed"),
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "remind", "evt@792417600", "--at", "15m", "--json"})
+	err := cmd.Execute()
+	if code := ExitCode(err); code != 1 {
+		t.Fatalf("expected exit code 1, got %d err=%v", code, err)
 	}
 }

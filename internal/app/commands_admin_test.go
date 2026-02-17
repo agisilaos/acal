@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agis/acal/internal/backend"
 	"github.com/agis/acal/internal/contract"
@@ -31,6 +32,10 @@ func (b *adminBackend) ListEvents(context.Context, backend.EventFilter) ([]contr
 }
 
 func (b *adminBackend) GetEventByID(context.Context, string) (*contract.Event, error) {
+	return nil, nil
+}
+
+func (b *adminBackend) GetReminderOffset(context.Context, string) (*time.Duration, error) {
 	return nil, nil
 }
 

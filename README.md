@@ -78,6 +78,8 @@ Recommended automation patterns:
   - inspect `acal history list --json`
   - rollback with `acal history undo --json`
   - re-apply with `acal history redo --json`
+- Reminder writes are read-back verified:
+  - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 
 Exit codes:
 

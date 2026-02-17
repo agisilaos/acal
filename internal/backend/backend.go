@@ -57,6 +57,7 @@ type Backend interface {
 	ListCalendars(context.Context) ([]contract.Calendar, error)
 	ListEvents(context.Context, EventFilter) ([]contract.Event, error)
 	GetEventByID(context.Context, string) (*contract.Event, error)
+	GetReminderOffset(context.Context, string) (*time.Duration, error)
 	AddEvent(context.Context, EventCreateInput) (*contract.Event, error)
 	UpdateEvent(context.Context, string, EventUpdateInput) (*contract.Event, error)
 	DeleteEvent(context.Context, string, RecurrenceScope) error
