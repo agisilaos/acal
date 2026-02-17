@@ -244,3 +244,107 @@ func TestEventsDeleteValidationMatrix(t *testing.T) {
 		})
 	}
 }
+
+func TestEventsMovePassesPatch(t *testing.T) {
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	fb := &scopeCaptureBackend{
+		getEvent: &contract.Event{
+			ID:       "evt@792417600",
+			Start:    base,
+			End:      base.Add(30 * time.Minute),
+			Sequence: 4,
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "move", "evt@792417600", "--by", "1h", "--scope", "this", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if fb.updateCalls != 1 {
+		t.Fatalf("expected one update call, got %d", fb.updateCalls)
+	}
+	if fb.updateInput.Start == nil || fb.updateInput.End == nil {
+		t.Fatalf("expected start/end patch")
+	}
+	if got, want := fb.updateInput.Start.Format(time.RFC3339), "2026-02-20T11:00:00Z"; got != want {
+		t.Fatalf("start mismatch: got=%s want=%s", got, want)
+	}
+	if got, want := fb.updateInput.End.Format(time.RFC3339), "2026-02-20T11:30:00Z"; got != want {
+		t.Fatalf("end mismatch: got=%s want=%s", got, want)
+	}
+	if fb.updateInput.Scope != backend.ScopeThis {
+		t.Fatalf("scope mismatch: got=%q want=%q", fb.updateInput.Scope, backend.ScopeThis)
+	}
+}
+
+func TestEventsMoveValidationMatrix(t *testing.T) {
+	base := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name            string
+		args            []string
+		backend         *scopeCaptureBackend
+		wantExitCode    int
+		wantUpdateCalls int
+	}{
+		{
+			name:            "missing to and by",
+			args:            []string{"events", "move", "evt@792417600", "--json"},
+			backend:         &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute)}},
+			wantExitCode:    2,
+			wantUpdateCalls: 0,
+		},
+		{
+			name:            "to and by conflict",
+			args:            []string{"events", "move", "evt@792417600", "--to", "today 10:00", "--by", "1h", "--json"},
+			backend:         &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute)}},
+			wantExitCode:    2,
+			wantUpdateCalls: 0,
+		},
+		{
+			name:            "not found",
+			args:            []string{"events", "move", "evt@792417600", "--by", "1h", "--json"},
+			backend:         &scopeCaptureBackend{getErr: errors.New("missing")},
+			wantExitCode:    4,
+			wantUpdateCalls: 0,
+		},
+		{
+			name:            "if-match mismatch",
+			args:            []string{"events", "move", "evt@792417600", "--by", "1h", "--if-match-seq", "2", "--json"},
+			backend:         &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute), Sequence: 1}},
+			wantExitCode:    7,
+			wantUpdateCalls: 0,
+		},
+		{
+			name:            "dry-run",
+			args:            []string{"events", "move", "evt@792417600", "--to", "2026-02-21T09:00", "--duration", "45m", "--dry-run", "--json", "--tz", "UTC"},
+			backend:         &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt@792417600", Start: base, End: base.Add(30 * time.Minute)}},
+			wantExitCode:    0,
+			wantUpdateCalls: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			origFactory := backendFactory
+			backendFactory = func(string) (backend.Backend, error) { return tc.backend, nil }
+			t.Cleanup(func() { backendFactory = origFactory })
+
+			cmd := NewRootCommand()
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(tc.args)
+			err := cmd.Execute()
+			if got := ExitCode(err); got != tc.wantExitCode {
+				t.Fatalf("exit code mismatch: got=%d want=%d err=%v", got, tc.wantExitCode, err)
+			}
+			if tc.backend.updateCalls != tc.wantUpdateCalls {
+				t.Fatalf("update calls mismatch: got=%d want=%d", tc.backend.updateCalls, tc.wantUpdateCalls)
+			}
+		})
+	}
+}

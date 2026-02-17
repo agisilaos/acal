@@ -27,6 +27,7 @@ acal version
 - `events show`
 - `events add`
 - `events update`
+- `events move`
 - `events delete`
 - `agenda`
 - `today`
@@ -96,6 +97,8 @@ Release scripts:
 ./acal events query --from today --to +14d --where 'title~sleep' --sort start --order asc --plain --fields id,title,start,end
 ./acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
 ./acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1
+./acal events move <event-id> --by 30m --scope auto
+./acal events move <event-id> --to 2026-02-20T14:00 --duration 45m --dry-run --json
 ./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```

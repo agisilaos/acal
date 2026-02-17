@@ -283,6 +283,90 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	update.Flags().IntVar(&ifMatch, "if-match-seq", 0, "Require matching sequence number")
 	update.Flags().BoolVarP(&upDryRun, "dry-run", "n", false, "Preview without writing")
 
+	var mvTo, mvBy, mvEnd, mvDuration, mvScope string
+	var mvIfMatch int
+	var mvDryRun bool
+	move := &cobra.Command{
+		Use:   "move <event-id>",
+		Short: "Move an event to a new time",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, be, ro, err := buildContext(cmd, opts, "events.move")
+			if err != nil {
+				return err
+			}
+			current, getErr := be.GetEventByID(context.Background(), args[0])
+			if getErr != nil {
+				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
+			}
+			if mvIfMatch > 0 && current.Sequence != mvIfMatch {
+				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, mvIfMatch)
+				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+			}
+			scope, err := parseRecurrenceScope(mvScope)
+			if err != nil {
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
+			}
+			if (mvTo == "" && mvBy == "") || (mvTo != "" && mvBy != "") {
+				err = errors.New("use exactly one of --to or --by")
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> or --by <duration>", 2)
+			}
+			loc := resolveLocation(ro.TZ)
+			start := current.Start
+			if mvTo != "" {
+				start, err = timeparse.ParseDateTime(mvTo, time.Now(), loc)
+				if err != nil {
+					return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
+				}
+			} else {
+				by, parseErr := time.ParseDuration(mvBy)
+				if parseErr != nil || by == 0 {
+					if parseErr == nil {
+						parseErr = errors.New("--by must not be zero")
+					}
+					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use a duration like +30m, -1h, 2h", 2)
+				}
+				start = current.Start.Add(by)
+			}
+
+			var end time.Time
+			if mvEnd != "" || mvDuration != "" {
+				end, err = resolveEnd(mvEnd, mvDuration, start, loc)
+				if err != nil {
+					return failWithHint(p, contract.ErrInvalidUsage, err, "Use --end or --duration", 2)
+				}
+			} else {
+				d := current.End.Sub(current.Start)
+				if d <= 0 {
+					err = errors.New("cannot preserve duration from current event; end must be after start")
+					return failWithHint(p, contract.ErrInvalidUsage, err, "Pass --duration or --end explicitly", 2)
+				}
+				end = start.Add(d)
+			}
+
+			patch := backend.EventUpdateInput{
+				Start: &start,
+				End:   &end,
+				Scope: scope,
+			}
+			if mvDryRun {
+				return p.Success(patch, map[string]any{"dry_run": true}, nil)
+			}
+			item, err := be.UpdateEvent(context.Background(), args[0], patch)
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Move failed", 1)
+			}
+			return p.Success(item, map[string]any{"count": 1}, nil)
+		},
+	}
+	move.Flags().StringVar(&mvTo, "to", "", "New start datetime")
+	move.Flags().StringVar(&mvBy, "by", "", "Offset duration (e.g. 30m, -1h)")
+	move.Flags().StringVar(&mvEnd, "end", "", "New end datetime")
+	move.Flags().StringVar(&mvDuration, "duration", "", "New duration from start (e.g. 45m)")
+	move.Flags().StringVar(&mvScope, "scope", "auto", "Recurrence scope: auto|this|future|series")
+	move.Flags().IntVar(&mvIfMatch, "if-match-seq", 0, "Require matching sequence number")
+	move.Flags().BoolVarP(&mvDryRun, "dry-run", "n", false, "Preview without writing")
+
 	var delForce, delDryRun bool
 	var delConfirm, delScope string
 	var delIfMatch int
@@ -339,7 +423,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	deleteCmd.Flags().IntVar(&delIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	deleteCmd.Flags().BoolVarP(&delDryRun, "dry-run", "n", false, "Preview without writing")
 
-	events.AddCommand(list, search, show, query, add, update, deleteCmd, newEventsQuickAddCmd(opts))
+	events.AddCommand(list, search, show, query, add, update, move, deleteCmd, newEventsQuickAddCmd(opts))
 	return events
 }
 
