@@ -271,10 +271,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			in := backend.EventCreateInput{Calendar: addCalendar, Title: addTitle, Start: startT, End: endT, Location: addLocation, Notes: notes, URL: addURL, AllDay: addAllDay}
 			spec, err := parseRepeatSpec(addRepeat, startT)
 			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --repeat like daily*5, weekly:mon,wed*6, monthly*3", 2)
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --repeat daily*5 | weekly:mon,wed*6 | monthly*3 | yearly*2", 2)
 			}
 			if spec.Frequency != "" {
-				in.RepeatRule = strings.TrimSpace(addRepeat)
+				in.RepeatRule = canonicalRepeatRule(spec)
 			}
 			if addDryRun {
 				return p.Success(in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
@@ -348,10 +348,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if cmd.Flags().Changed("repeat") {
 				spec, specErr := parseRepeatSpec(upRepeat, time.Now())
 				if specErr != nil {
-					return failWithHint(p, contract.ErrInvalidUsage, specErr, "Use --repeat like daily*5 or weekly:mon,wed*6", 2)
+					return failWithHint(p, contract.ErrInvalidUsage, specErr, "Use --repeat daily*5 | weekly:mon,wed*6 | monthly*3 | yearly*2", 2)
 				}
-				_ = spec
-				r := strings.TrimSpace(upRepeat)
+				r := canonicalRepeatRule(spec)
 				patch.RepeatRule = &r
 			}
 			if cmd.Flags().Changed("url") {

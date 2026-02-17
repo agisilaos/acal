@@ -184,3 +184,9 @@ Release scripts:
   - `--scope this`: target one occurrence (requires occurrence-style ID).
   - `--scope future`: target this and following occurrences (requires occurrence-style ID).
   - `--scope series`: target the full series.
+- Repeat rule grammar (`events add|update --repeat`):
+  - `daily*<count>`
+  - `weekly:<day[,day...]>*<count>` where day is `mon|tue|wed|thu|fri|sat|sun`
+  - `monthly*<count>`
+  - `yearly*<count>`
+  - Count must be `1..366`.

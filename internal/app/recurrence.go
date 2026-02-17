@@ -18,13 +18,25 @@ func parseRepeatSpec(v string, anchor time.Time) (repeatSpec, error) {
 	if s == "" {
 		return repeatSpec{}, nil
 	}
+	if strings.Count(s, "*") > 1 {
+		return repeatSpec{}, fmt.Errorf("invalid repeat rule: too many '*' segments")
+	}
+	if strings.Count(s, ":") > 1 {
+		return repeatSpec{}, fmt.Errorf("invalid repeat rule: too many ':' segments")
+	}
 	count := 0
 	if strings.Contains(s, "*") {
 		parts := strings.SplitN(s, "*", 2)
+		if strings.TrimSpace(parts[0]) == "" {
+			return repeatSpec{}, fmt.Errorf("invalid repeat rule: missing frequency")
+		}
 		s = strings.TrimSpace(parts[0])
 		n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 		if err != nil || n <= 0 {
 			return repeatSpec{}, fmt.Errorf("invalid repeat count")
+		}
+		if n > 366 {
+			return repeatSpec{}, fmt.Errorf("repeat count too large (max 366)")
 		}
 		count = n
 	}
@@ -40,6 +52,8 @@ func parseRepeatSpec(v string, anchor time.Time) (repeatSpec, error) {
 				return repeatSpec{}, err
 			}
 			sp.Weekdays = ws
+		} else {
+			return repeatSpec{}, fmt.Errorf("only weekly supports weekday selectors")
 		}
 	}
 	sp.Frequency = left
@@ -55,6 +69,27 @@ func parseRepeatSpec(v string, anchor time.Time) (repeatSpec, error) {
 	default:
 		return repeatSpec{}, fmt.Errorf("unsupported --repeat frequency")
 	}
+}
+
+func canonicalRepeatRule(spec repeatSpec) string {
+	if spec.Frequency == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(spec.Frequency)
+	if spec.Frequency == "weekly" && len(spec.Weekdays) > 0 {
+		b.WriteString(":")
+		names := make([]string, 0, len(spec.Weekdays))
+		for _, wd := range spec.Weekdays {
+			names = append(names, canonicalWeekdayToken(wd))
+		}
+		b.WriteString(strings.Join(names, ","))
+	}
+	if spec.Count > 0 {
+		b.WriteString("*")
+		b.WriteString(strconv.Itoa(spec.Count))
+	}
+	return b.String()
 }
 
 func expandRepeat(st time.Time, spec repeatSpec) []time.Time {
@@ -100,6 +135,23 @@ func parseWeekdays(v string) ([]time.Weekday, error) {
 	if len(out) == 0 {
 		return nil, fmt.Errorf("weekly repeat requires weekdays")
 	}
+	// Deterministic canonical ordering for stable round-tripping.
+	order := map[time.Weekday]int{
+		time.Monday:    0,
+		time.Tuesday:   1,
+		time.Wednesday: 2,
+		time.Thursday:  3,
+		time.Friday:    4,
+		time.Saturday:  5,
+		time.Sunday:    6,
+	}
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if order[out[j]] < order[out[i]] {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -121,6 +173,27 @@ func parseWeekdayToken(v string) (time.Weekday, error) {
 		return time.Sunday, nil
 	default:
 		return time.Sunday, fmt.Errorf("invalid weekday: %s", v)
+	}
+}
+
+func canonicalWeekdayToken(wd time.Weekday) string {
+	switch wd {
+	case time.Monday:
+		return "mon"
+	case time.Tuesday:
+		return "tue"
+	case time.Wednesday:
+		return "wed"
+	case time.Thursday:
+		return "thu"
+	case time.Friday:
+		return "fri"
+	case time.Saturday:
+		return "sat"
+	case time.Sunday:
+		return "sun"
+	default:
+		return "sun"
 	}
 }
 
