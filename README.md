@@ -116,5 +116,5 @@ Release scripts:
 - Recurring write scope:
   - `--scope auto`: if ID is `<uid>@<occurrence>`, targets one occurrence; otherwise targets full series.
   - `--scope this`: target one occurrence (requires occurrence-style ID).
+  - `--scope future`: target this and following occurrences (requires occurrence-style ID).
   - `--scope series`: target the full series.
-  - `--scope future`: parsed and validated but not yet supported by the `osascript` backend.

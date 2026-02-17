@@ -86,6 +86,14 @@ func TestResolveRecurrenceScopeAuto(t *testing.T) {
 }
 
 func TestResolveRecurrenceScopeValidation(t *testing.T) {
+	got, err := resolveRecurrenceScope(ScopeFuture, 792417600)
+	if err != nil {
+		t.Fatalf("unexpected error for future with occurrence: %v", err)
+	}
+	if got != ScopeFuture {
+		t.Fatalf("got=%q want=%q", got, ScopeFuture)
+	}
+
 	if _, err := resolveRecurrenceScope(ScopeThis, 0); err == nil {
 		t.Fatalf("expected error for this without occurrence")
 	}
