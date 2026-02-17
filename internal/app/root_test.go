@@ -215,3 +215,81 @@ func TestStdinInteractiveFalseForPipe(t *testing.T) {
 		t.Fatalf("expected non-interactive for pipe stdin")
 	}
 }
+
+func TestSelectBackend(t *testing.T) {
+	be, err := selectBackend("osascript")
+	if err != nil {
+		t.Fatalf("selectBackend osascript error: %v", err)
+	}
+	if be == nil {
+		t.Fatalf("expected backend instance")
+	}
+	if _, err := selectBackend("eventkit"); err == nil {
+		t.Fatalf("expected eventkit not-implemented error")
+	}
+	if _, err := selectBackend("bad-backend"); err == nil {
+		t.Fatalf("expected unknown backend error")
+	}
+}
+
+func TestBuildContextMutuallyExclusiveOutputFlags(t *testing.T) {
+	cmd := newTestCmd()
+	if err := cmd.ParseFlags([]string{"--json", "--plain"}); err != nil {
+		t.Fatalf("parse flags failed: %v", err)
+	}
+	opts := &globalOptions{
+		JSON:          true,
+		Plain:         true,
+		Backend:       "osascript",
+		Profile:       "default",
+		SchemaVersion: "v1",
+	}
+	_, be, _, err := buildContext(cmd, opts, "events.list")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if be != nil {
+		t.Fatalf("expected nil backend on error")
+	}
+	if code := ExitCode(err); code != 2 {
+		t.Fatalf("exit code mismatch: got=%d want=2", code)
+	}
+}
+
+func TestBuildContextUnknownBackend(t *testing.T) {
+	cmd := newTestCmd()
+	if err := cmd.ParseFlags([]string{"--backend", "bad-backend"}); err != nil {
+		t.Fatalf("parse flags failed: %v", err)
+	}
+	opts := &globalOptions{
+		Backend:       "bad-backend",
+		Profile:       "default",
+		SchemaVersion: "v1",
+	}
+	_, be, _, err := buildContext(cmd, opts, "events.list")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if be != nil {
+		t.Fatalf("expected nil backend on error")
+	}
+	if code := ExitCode(err); code != 2 {
+		t.Fatalf("exit code mismatch: got=%d want=2", code)
+	}
+}
+
+func TestBuildEventFilterWrapper(t *testing.T) {
+	f, err := buildEventFilter("today", "+1d", []string{"Work"}, 10)
+	if err != nil {
+		t.Fatalf("buildEventFilter failed: %v", err)
+	}
+	if !f.To.After(f.From) {
+		t.Fatalf("expected to > from, got from=%s to=%s", f.From, f.To)
+	}
+	if len(f.Calendars) != 1 || f.Calendars[0] != "Work" {
+		t.Fatalf("unexpected calendars: %+v", f.Calendars)
+	}
+	if f.Limit != 10 {
+		t.Fatalf("limit mismatch: got=%d", f.Limit)
+	}
+}
