@@ -120,6 +120,13 @@ Supported precedence: `flags > env > project config > user config > defaults`
 go build ./cmd/acal
 ```
 
+## Testing
+
+```bash
+go test ./...
+go test ./internal/backend -bench ListEventsViaSQLite -run '^$' -benchmem
+```
+
 ## Release
 
 ```bash
@@ -178,6 +185,7 @@ Release scripts:
 ## Notes
 
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
+- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode to reduce lock waits and subprocess overhead.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
