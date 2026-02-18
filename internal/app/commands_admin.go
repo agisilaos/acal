@@ -42,9 +42,13 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			}
 			_ = ro
 			checks, derr := be.Doctor(context.Background())
-			_ = p.Success(checks, map[string]any{"count": len(checks)}, nil)
+			meta := map[string]any{"count": len(checks), "ready": derr == nil}
+			var warnings []string
 			if derr != nil {
-				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run with GUI session and grant Calendar automation permission")
+				warnings = []string{derr.Error()}
+			}
+			_ = p.Success(checks, meta, warnings)
+			if derr != nil {
 				return WrapPrinted(6, derr)
 			}
 			return nil

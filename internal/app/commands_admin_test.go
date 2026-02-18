@@ -116,6 +116,36 @@ func TestDoctorAndCalendarsCommands(t *testing.T) {
 	}
 }
 
+func TestDoctorFailureProducesSinglePayload(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{{Name: "osascript", Status: "fail"}},
+		doctorErr: errors.New("osascript missing"),
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"doctor", "--json"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected doctor error")
+	}
+	if code := ExitCode(err); code != 6 {
+		t.Fatalf("exit code mismatch: got=%d want=6", code)
+	}
+	if got := errOut.String(); got != "" {
+		t.Fatalf("expected no stderr payload, got: %q", got)
+	}
+	if got := out.String(); !strings.Contains(got, "\"warnings\": [") {
+		t.Fatalf("expected warnings in doctor payload: %q", got)
+	}
+}
+
 func TestStatusCommand(t *testing.T) {
 	fb := &adminBackend{
 		checks: []contract.DoctorCheck{
