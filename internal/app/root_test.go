@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,5 +292,76 @@ func TestBuildEventFilterWrapper(t *testing.T) {
 	}
 	if f.Limit != 10 {
 		t.Fatalf("limit mismatch: got=%d", f.Limit)
+	}
+}
+
+func TestRenderTopLevelErrorUnknownCommand(t *testing.T) {
+	cmd := NewRootCommand()
+	var stderr bytes.Buffer
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"frobulate"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	origArgs := os.Args
+	os.Args = []string{"acal", "frobulate"}
+	t.Cleanup(func() { os.Args = origArgs })
+
+	renderTopLevelError(cmd, err)
+	if got := stderr.String(); !strings.Contains(got, `unknown command "frobulate"`) {
+		t.Fatalf("expected rendered unknown-command error, got: %q", got)
+	}
+}
+
+func TestRenderTopLevelErrorMutuallyExclusiveFlagsJSON(t *testing.T) {
+	cmd := NewRootCommand()
+	var stderr bytes.Buffer
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--json", "--plain", "status"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	origArgs := os.Args
+	os.Args = []string{"acal", "--json", "--plain", "status"}
+	t.Cleanup(func() { os.Args = origArgs })
+
+	renderTopLevelError(cmd, err)
+	got := stderr.String()
+	if !strings.Contains(got, `"code": "INVALID_USAGE"`) {
+		t.Fatalf("expected INVALID_USAGE json error, got: %q", got)
+	}
+	if !strings.Contains(got, `"--json, --jsonl, and --plain are mutually exclusive"`) {
+		t.Fatalf("expected mutual exclusion message, got: %q", got)
+	}
+}
+
+func TestRenderTopLevelErrorCompletionInvalidShellJSON(t *testing.T) {
+	cmd := NewRootCommand()
+	var stderr bytes.Buffer
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--json", "completion", "tcsh"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	origArgs := os.Args
+	os.Args = []string{"acal", "--json", "completion", "tcsh"}
+	t.Cleanup(func() { os.Args = origArgs })
+
+	renderTopLevelError(cmd, err)
+	got := stderr.String()
+	if !strings.Contains(got, `"code": "INVALID_USAGE"`) {
+		t.Fatalf("expected INVALID_USAGE json error, got: %q", got)
+	}
+	if !strings.Contains(got, `"unsupported shell: tcsh"`) {
+		t.Fatalf("expected unsupported shell message, got: %q", got)
 	}
 }
