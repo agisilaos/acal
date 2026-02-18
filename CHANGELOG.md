@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.3] - 2026-02-18
+
+- docs(changelog): let release script generate v0.1.3 entry (83bc7c4)
+- docs(changelog): prepare v0.1.3 notes (f893fda)
+- feat(batch): add tx ids and transactional history snapshots (6f6ab08)
+- feat(reminders): verify reminder writes via backend readback (91a4fac)
+- feat(recurrence): enforce strict repeat grammar and canonicalization (0e38309)
+- chore: ignore macOS .DS_Store (0de5147)
+
 ## [v0.1.2] - 2026-02-17
 
 - Harden agent workflows, add strict modes, redo, and backend reminder/recurrence fields (523e1ed)
