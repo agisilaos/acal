@@ -1,11 +1,13 @@
 package app
 
 import (
-	"context"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 
 	"github.com/agis/acal/internal/contract"
+	"github.com/agis/acal/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +21,7 @@ type statusResult struct {
 	SchemaVersion string                 `json:"schema_version"`
 	Checks        []contract.DoctorCheck `json:"checks"`
 	NextSteps     []string               `json:"next_steps,omitempty"`
+	ReasonCodes   []string               `json:"degraded_reason_codes,omitempty"`
 }
 
 func newVersionCmd() *cobra.Command {
@@ -40,16 +43,27 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_ = ro
-			checks, derr := be.Doctor(context.Background())
-			meta := map[string]any{"count": len(checks), "ready": derr == nil}
-			var warnings []string
-			if derr != nil {
-				warnings = []string{derr.Error()}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			checks, derr := doctorWithTimeout(ctx, be)
+			setup := buildSetupResult(checks, derr, ro.Backend)
+			reasonCodes := deriveDegradedReasonCodes(checks, derr)
+			meta := map[string]any{
+				"count":                 len(checks),
+				"ready":                 setup.Ready,
+				"degraded":              setup.Degraded,
+				"degraded_reason_codes": reasonCodes,
+			}
+			warnings := setup.Notes
+			if p.EffectiveSuccessMode() == output.ModePlain {
+				return printDoctorPlain(cmd.OutOrStdout(), checks, setup, reasonCodes)
 			}
 			_ = p.Success(checks, meta, warnings)
-			if derr != nil {
+			if !setup.Ready && derr != nil {
 				return WrapPrinted(6, derr)
+			}
+			if !setup.Ready {
+				return Wrap(6, fmt.Errorf("doctor checks not ready"))
 			}
 			return nil
 		},
@@ -65,8 +79,11 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			checks, derr := be.Doctor(context.Background())
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			checks, derr := doctorWithTimeout(ctx, be)
 			setup := buildSetupResult(checks, derr, ro.Backend)
+			reasonCodes := deriveDegradedReasonCodes(checks, derr)
 			res := statusResult{
 				Ready:         setup.Ready,
 				Degraded:      setup.Degraded,
@@ -77,12 +94,19 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 				SchemaVersion: ro.SchemaVersion,
 				Checks:        checks,
 				NextSteps:     setup.NextSteps,
+				ReasonCodes:   reasonCodes,
 			}
-			_ = p.Success(res, map[string]any{
-				"ready":    res.Ready,
-				"degraded": res.Degraded,
-				"checks":   len(res.Checks),
-			}, nil)
+			meta := map[string]any{
+				"ready":                 res.Ready,
+				"degraded":              res.Degraded,
+				"checks":                len(res.Checks),
+				"degraded_reason_codes": reasonCodes,
+			}
+			if p.EffectiveSuccessMode() == output.ModePlain {
+				_ = printStatusPlain(cmd.OutOrStdout(), res)
+			} else {
+				_ = p.Success(res, meta, nil)
+			}
 			if !setup.Ready {
 				if derr != nil {
 					_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` for remediation")
@@ -101,11 +125,13 @@ func newCalendarsCmd(opts *globalOptions) *cobra.Command {
 		Use:   "list",
 		Short: "List calendars",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, be, _, err := buildContext(cmd, opts, "calendars.list")
+			p, be, ro, err := buildContext(cmd, opts, "calendars.list")
 			if err != nil {
 				return err
 			}
-			items, err := be.ListCalendars(context.Background())
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listCalendarsWithTimeout(ctx, be)
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
@@ -138,4 +164,58 @@ func newCompletionCmd(root *cobra.Command) *cobra.Command {
 			}
 		},
 	}
+}
+
+func deriveDegradedReasonCodes(checks []contract.DoctorCheck, derr error) []string {
+	codeSet := map[string]struct{}{}
+	for _, c := range checks {
+		status := strings.ToLower(strings.TrimSpace(c.Status))
+		if status == "" || status == "ok" || status == "pass" {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(c.Name))
+		name = strings.ReplaceAll(name, " ", "_")
+		name = strings.ReplaceAll(name, "-", "_")
+		if name == "" {
+			name = "unknown_check"
+		}
+		codeSet[name+"_fail"] = struct{}{}
+	}
+	if derr != nil {
+		codeSet["doctor_error"] = struct{}{}
+	}
+	if len(codeSet) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(codeSet))
+	for code := range codeSet {
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func printDoctorPlain(out io.Writer, checks []contract.DoctorCheck, setup setupResult, reasonCodes []string) error {
+	_, _ = fmt.Fprintf(out, "ready=%t degraded=%t checks=%d\n", setup.Ready, setup.Degraded, len(checks))
+	if len(reasonCodes) > 0 {
+		_, _ = fmt.Fprintf(out, "reasons=%s\n", strings.Join(reasonCodes, ","))
+	}
+	for _, c := range checks {
+		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", c.Status, c.Name, c.Message)
+	}
+	for _, step := range setup.NextSteps {
+		_, _ = fmt.Fprintf(out, "next: %s\n", step)
+	}
+	return nil
+}
+
+func printStatusPlain(out io.Writer, res statusResult) error {
+	_, _ = fmt.Fprintf(out, "ready=%t degraded=%t backend=%s profile=%s output_mode=%s checks=%d\n", res.Ready, res.Degraded, res.Backend, res.Profile, res.OutputMode, len(res.Checks))
+	if len(res.ReasonCodes) > 0 {
+		_, _ = fmt.Fprintf(out, "reasons=%s\n", strings.Join(res.ReasonCodes, ","))
+	}
+	for _, c := range res.Checks {
+		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", c.Status, c.Name, c.Message)
+	}
+	return nil
 }

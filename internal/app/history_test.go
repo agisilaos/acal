@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,5 +122,35 @@ func TestHistoryRedoCommandDryRun(t *testing.T) {
 	}
 	if fb.addCalls != 0 {
 		t.Fatalf("expected no add calls in dry-run")
+	}
+}
+
+func TestHistoryListPagination(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for i := 1; i <= 3; i++ {
+		if err := appendHistory(historyEntry{
+			At:      time.Date(2026, 2, 18, 9, i, 0, 0, time.UTC),
+			Type:    "add",
+			EventID: fmt.Sprintf("e%d", i),
+		}); err != nil {
+			t.Fatalf("appendHistory failed: %v", err)
+		}
+	}
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"history", "list", "--json", "--limit", "1", "--offset", "1"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("history list failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "\"event_id\": \"e2\"") {
+		t.Fatalf("expected second-most-recent event in paged output, got: %q", got)
+	}
+	if !strings.Contains(got, "\"total\": 3") || !strings.Contains(got, "\"next_offset\": 2") {
+		t.Fatalf("expected pagination metadata, got: %q", got)
 	}
 }

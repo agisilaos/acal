@@ -82,7 +82,11 @@ func TestCompletionInvalidShellExitCode(t *testing.T) {
 
 func TestDoctorAndCalendarsCommands(t *testing.T) {
 	fb := &adminBackend{
-		checks: []contract.DoctorCheck{{Name: "osascript", Status: "ok"}},
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db_read", Status: "ok"},
+		},
 		calendars: []contract.Calendar{
 			{ID: "cal-1", Name: "Work", Writable: true},
 		},
@@ -118,7 +122,7 @@ func TestDoctorAndCalendarsCommands(t *testing.T) {
 
 func TestDoctorFailureProducesSinglePayload(t *testing.T) {
 	fb := &adminBackend{
-		checks: []contract.DoctorCheck{{Name: "osascript", Status: "fail"}},
+		checks:    []contract.DoctorCheck{{Name: "osascript", Status: "fail"}},
 		doctorErr: errors.New("osascript missing"),
 	}
 	origFactory := backendFactory
@@ -174,6 +178,9 @@ func TestStatusCommand(t *testing.T) {
 	if !strings.Contains(got, "\"ready\": true") {
 		t.Fatalf("expected ready=true in output: %q", got)
 	}
+	if !strings.Contains(got, "\"degraded_reason_codes\":") {
+		t.Fatalf("expected degraded_reason_codes in output: %q", got)
+	}
 }
 
 func TestStatusCommandNotReadyExitCode(t *testing.T) {
@@ -224,5 +231,60 @@ func TestStatusCommandReportsEffectiveOutputMode(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, `"output_mode": "json"`) {
 		t.Fatalf("expected effective output_mode json in non-tty, got: %q", got)
+	}
+}
+
+func TestDoctorDegradedMatchesStatusReadiness(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db_read", Status: "fail"},
+		},
+		doctorErr: errors.New("calendar db denied"),
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"doctor", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("doctor should be degraded but ready, got err=%v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "\"ready\": true") {
+		t.Fatalf("expected ready=true in doctor meta: %q", got)
+	}
+	if !strings.Contains(got, "\"degraded\": true") {
+		t.Fatalf("expected degraded=true in doctor meta: %q", got)
+	}
+}
+
+func TestStatusPlainOutputIsHumanReadable(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok", Message: "available"},
+			{Name: "calendar_access", Status: "ok", Message: "allowed"},
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status", "--plain"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "ready=") || !strings.Contains(got, "[ok] osascript") {
+		t.Fatalf("expected human-readable plain output, got: %q", got)
 	}
 }

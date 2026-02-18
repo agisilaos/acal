@@ -1,16 +1,18 @@
 package app
 
 import (
-	"context"
+	"fmt"
+	"time"
 
 	"github.com/agis/acal/internal/contract"
+	"github.com/agis/acal/internal/output"
 	"github.com/spf13/cobra"
 )
 
 func newHistoryCmd(opts *globalOptions) *cobra.Command {
 	history := &cobra.Command{Use: "history", Short: "Inspect and undo write history"}
 
-	var limit int
+	var limit, offset int
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List recent history entries",
@@ -23,24 +25,53 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Check history file permissions", 1)
 			}
-			if limit > 0 && len(entries) > limit {
-				entries = entries[len(entries)-limit:]
+			total := len(entries)
+			if limit <= 0 {
+				limit = 10
 			}
-			return p.Success(entries, map[string]any{"count": len(entries)}, nil)
+			if offset < 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--offset must be >= 0"), "Use --offset 0 or greater", 2)
+			}
+			end := total - offset
+			if end < 0 {
+				end = 0
+			}
+			start := end - limit
+			if start < 0 {
+				start = 0
+			}
+			paged := entries[start:end]
+			meta := map[string]any{
+				"count":       len(paged),
+				"total":       total,
+				"limit":       limit,
+				"offset":      offset,
+				"next_offset": offset + len(paged),
+			}
+			if p.EffectiveSuccessMode() == output.ModePlain {
+				for _, e := range paged {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", e.At.Format(time.RFC3339), e.Type, e.EventID, e.TxID, e.OpID)
+				}
+				return nil
+			}
+			return p.Success(paged, meta, nil)
 		},
 	}
-	list.Flags().IntVar(&limit, "limit", 20, "Maximum entries")
+	list.Flags().IntVar(&limit, "limit", 10, "Maximum entries")
+	list.Flags().IntVar(&offset, "offset", 0, "Offset from most recent entry")
 
 	var dryRun bool
 	undo := &cobra.Command{
 		Use:   "undo",
 		Short: "Undo the latest recorded write operation",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, be, _, err := buildContext(cmd, opts, "history.undo")
+			p, be, ro, err := buildContext(cmd, opts, "history.undo")
 			if err != nil {
 				return err
 			}
-			entry, meta, err := undoLastHistory(context.Background(), be, dryRun)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			entry, meta, err := undoLastHistory(ctx, be, dryRun)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Run `acal history list` to inspect entries", 1)
 			}
@@ -56,11 +87,13 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 		Use:   "redo",
 		Short: "Redo the latest undone write operation",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, be, _, err := buildContext(cmd, opts, "history.redo")
+			p, be, ro, err := buildContext(cmd, opts, "history.redo")
 			if err != nil {
 				return err
 			}
-			entry, meta, err := redoLastHistory(context.Background(), be, dryRun)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			entry, meta, err := redoLastHistory(ctx, be, dryRun)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Run `acal history undo` first to create redo entries", 1)
 			}

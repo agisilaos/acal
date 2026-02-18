@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +72,19 @@ func TestParseQuickAddInputMissingTime(t *testing.T) {
 	now := time.Date(2026, 2, 16, 8, 0, 0, 0, time.UTC)
 	if _, err := parseQuickAddInput("tomorrow Standup @Work", now, time.UTC, "", time.Hour, false); err == nil {
 		t.Fatalf("expected missing time error")
+	}
+}
+
+func TestQuickAddDryRunPlainOutput(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"quick-add", "tomorrow 10:00 Standup @Work 30m", "--dry-run", "--plain"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("quick-add failed: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "dry-run\t") || !strings.Contains(got, "\tWork\tStandup") {
+		t.Fatalf("expected readable plain quick-add output, got: %q", got)
 	}
 }

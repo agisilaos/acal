@@ -59,6 +59,7 @@ acal version
 - `--jsonl` streaming object-per-line output
 - `--plain` stable line-based output
 - `--verbose` diagnostics to stderr (resolved command/backend/mode/profile)
+- `--timeout` bounds backend calls (default `15s`, set `0` to disable)
 - `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
 
 ## Agent usage
@@ -91,6 +92,10 @@ Exit codes:
 - `6`: backend unavailable
 - `7`: concurrency conflict (sequence mismatch)
 
+Notes:
+- `doctor` and `status` share readiness semantics. Degraded environments can still be `ready=true` when core automation checks pass.
+- `status` and `doctor` include `degraded_reason_codes` for machine-actionable remediation.
+
 ## Config and precedence
 
 Supported precedence: `flags > env > project config > user config > defaults`
@@ -101,6 +106,7 @@ Supported precedence: `flags > env > project config > user config > defaults`
   - `ACAL_PROFILE`
   - `ACAL_BACKEND`
   - `ACAL_TIMEZONE`
+  - `ACAL_TIMEOUT` (e.g. `15s`, `1m`, `0`)
   - `ACAL_OUTPUT` (`json|jsonl|plain`)
   - `ACAL_FIELDS`
   - `ACAL_NO_INPUT`
@@ -141,6 +147,7 @@ Release scripts:
 ./acal view month --month 2026-02 --summary --plain --fields date,total
 ./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
 ./acal history list --json
+./acal history list --json --limit 10 --offset 10
 ./acal history undo --dry-run --json
 ./acal history redo --dry-run --json
 ./acal queries save next7 --from today --to +7d --where 'title~standup' --limit 10
@@ -171,6 +178,7 @@ Release scripts:
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
+- `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
 - Persistence files (under config dir, usually `~/.config/acal/`):
   - `config.toml`: runtime defaults/profiles.
   - `history.jsonl`: append-only write history for undo.
@@ -193,3 +201,6 @@ Release scripts:
   - `monthly*<count>`
   - `yearly*<count>`
   - Count must be `1..366`.
+- History pagination:
+  - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`).
+  - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`.

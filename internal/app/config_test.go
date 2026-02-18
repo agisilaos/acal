@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -101,6 +102,31 @@ func TestResolveGlobalOptionsNoColorEnv(t *testing.T) {
 	}
 }
 
+func TestResolveGlobalOptionsTimeoutEnvAndFlag(t *testing.T) {
+	t.Setenv("ACAL_TIMEOUT", "45s")
+	defaults := &globalOptions{Profile: "default", Backend: "osascript", Timeout: 15 * time.Second, SchemaVersion: "v1"}
+	cmd := newTestCmd()
+	resolved, err := resolveGlobalOptions(cmd, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := resolved.Timeout, 45*time.Second; got != want {
+		t.Fatalf("timeout mismatch from env: got=%s want=%s", got, want)
+	}
+
+	if err := cmd.ParseFlags([]string{"--timeout", "2m"}); err != nil {
+		t.Fatal(err)
+	}
+	defaults.Timeout = 2 * time.Minute
+	resolved, err = resolveGlobalOptions(cmd, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := resolved.Timeout, 2*time.Minute; got != want {
+		t.Fatalf("timeout mismatch from flag: got=%s want=%s", got, want)
+	}
+}
+
 func newTestCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().Bool("json", false, "")
@@ -115,6 +141,7 @@ func newTestCmd() *cobra.Command {
 	cmd.Flags().String("config", "", "")
 	cmd.Flags().String("backend", "", "")
 	cmd.Flags().String("tz", "", "")
+	cmd.Flags().Duration("timeout", 15*time.Second, "")
 	cmd.Flags().String("schema-version", "v1", "")
 	return cmd
 }

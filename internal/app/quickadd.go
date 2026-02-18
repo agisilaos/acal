@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/agis/acal/internal/backend"
 	"github.com/agis/acal/internal/contract"
+	"github.com/agis/acal/internal/output"
 	"github.com/agis/acal/internal/timeparse"
 	"github.com/spf13/cobra"
 )
@@ -54,12 +54,22 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				return WrapPrinted(2, err)
 			}
 			if dryRun {
+				if p.EffectiveSuccessMode() == output.ModePlain {
+					_, _ = fmt.Fprintf(c.OutOrStdout(), "dry-run\t%s\t%s\t%s\t%s\n", in.Start.Format(time.RFC3339), in.End.Format(time.RFC3339), in.Calendar, in.Title)
+					return nil
+				}
 				return p.Success(in, map[string]any{"dry_run": true}, nil)
 			}
-			item, err := be.AddEvent(context.Background(), in)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
 				return WrapPrinted(1, err)
+			}
+			if p.EffectiveSuccessMode() == output.ModePlain && item != nil {
+				_, _ = fmt.Fprintf(c.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", item.ID, item.Start.Format(time.RFC3339), item.End.Format(time.RFC3339), firstNonEmpty(item.CalendarName, item.CalendarID), item.Title)
+				return nil
 			}
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
