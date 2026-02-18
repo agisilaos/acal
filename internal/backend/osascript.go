@@ -114,15 +114,18 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 
 	items, err := listEventsViaSQLite(ctx, dbPath, query)
 	if err != nil {
+		if !shouldFallbackFromSQLite(err) {
+			return nil, err
+		}
 		msg := err.Error()
 		items, fbErr := b.listEventsViaAppleScript(ctx, f)
 		if fbErr == nil {
 			return items, nil
 		}
 		if isDBAccessDenied(msg) {
-			return nil, fmt.Errorf("sqlite3 query failed: %s (AppleScript fallback failed: %v)", msg, fbErr)
+			return nil, fmt.Errorf("sqlite query failed: %s (AppleScript fallback failed: %v)", msg, fbErr)
 		}
-		return nil, fmt.Errorf("sqlite3 query failed: %s (fallback failed: %v)", msg, fbErr)
+		return nil, fmt.Errorf("sqlite query failed: %s (fallback failed: %v)", msg, fbErr)
 	}
 
 	return items, nil
@@ -202,7 +205,7 @@ func sqlLikeLiteral(v string) string {
 }
 
 func checkCalendarDBReadable(ctx context.Context, dbPath string) error {
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := openCalendarReadDB(dbPath)
 	if err != nil {
 		return err
 	}
@@ -212,7 +215,7 @@ func checkCalendarDBReadable(ctx context.Context, dbPath string) error {
 }
 
 func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.Event, error) {
-	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	db, err := openCalendarReadDB(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +252,27 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 		return nil, err
 	}
 	return items, nil
+}
+
+func openCalendarReadDB(dbPath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", calendarSQLiteDSN(dbPath))
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	return db, nil
+}
+
+func calendarSQLiteDSN(dbPath string) string {
+	return "file:" + dbPath + "?mode=ro&immutable=1"
+}
+
+func shouldFallbackFromSQLite(err error) bool {
+	if err == nil {
+		return false
+	}
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
 
 func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f EventFilter) ([]contract.Event, error) {

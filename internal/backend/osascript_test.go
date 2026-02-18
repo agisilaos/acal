@@ -1,6 +1,8 @@
 package backend
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -167,5 +169,30 @@ func TestBuildListEventsQueryUnknownFieldUsesNoResultsPredicate(t *testing.T) {
 	q := buildListEventsQuery(1, 2, EventFilter{Query: "x", Field: "bogus"})
 	if !strings.Contains(q, "AND 1=0") {
 		t.Fatalf("expected impossible predicate for unknown field, got: %s", q)
+	}
+}
+
+func TestCalendarSQLiteDSNUsesReadOnlyImmutableMode(t *testing.T) {
+	dsn := calendarSQLiteDSN("/tmp/Calendar.sqlitedb")
+	if !strings.Contains(dsn, "mode=ro") {
+		t.Fatalf("expected read-only mode in dsn, got: %s", dsn)
+	}
+	if !strings.Contains(dsn, "immutable=1") {
+		t.Fatalf("expected immutable mode in dsn, got: %s", dsn)
+	}
+}
+
+func TestShouldFallbackFromSQLite(t *testing.T) {
+	if !shouldFallbackFromSQLite(errors.New("permission denied")) {
+		t.Fatalf("expected fallback for non-context sqlite errors")
+	}
+	if shouldFallbackFromSQLite(context.Canceled) {
+		t.Fatalf("did not expect fallback for canceled context")
+	}
+	if shouldFallbackFromSQLite(context.DeadlineExceeded) {
+		t.Fatalf("did not expect fallback for deadline exceeded context")
+	}
+	if shouldFallbackFromSQLite(nil) {
+		t.Fatalf("did not expect fallback for nil error")
 	}
 }
