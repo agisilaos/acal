@@ -589,14 +589,6 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			item, getErr := be.GetEventByID(context.Background(), args[0])
-			if getErr == nil && delIfMatch > 0 && item.Sequence != delIfMatch {
-				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, delIfMatch)
-				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
-			}
-			if getErr != nil && delIfMatch > 0 {
-				return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
-			}
 			if !delForce && delConfirm != args[0] {
 				if ro.NoInput || !stdinInteractive() {
 					err = errors.New("non-interactive delete requires --force or --confirm <event-id>")
@@ -616,10 +608,16 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
 			}
 			if delDryRun {
-				if getErr != nil {
-					item = &contract.Event{ID: args[0]}
-				}
-				return p.Success(item, map[string]any{"dry_run": true, "scope": scope}, nil)
+				item := &contract.Event{ID: args[0]}
+				return p.Success(item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
+			}
+			item, getErr := be.GetEventByID(context.Background(), args[0])
+			if getErr == nil && delIfMatch > 0 && item.Sequence != delIfMatch {
+				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, delIfMatch)
+				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+			}
+			if getErr != nil && delIfMatch > 0 {
+				return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
 			}
 			if err := be.DeleteEvent(context.Background(), args[0], scope); err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Delete failed", 1)
