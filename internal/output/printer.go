@@ -33,7 +33,7 @@ type Printer struct {
 }
 
 func (p Printer) Success(data any, meta map[string]any, warnings []string) error {
-	switch p.successMode() {
+	switch p.EffectiveSuccessMode() {
 	case ModeJSON:
 		env := contract.SuccessEnvelope{
 			SchemaVersion: p.schemaVersion(),
@@ -64,7 +64,7 @@ func (p Printer) Success(data any, meta map[string]any, warnings []string) error
 }
 
 func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
-	mode := p.errorMode()
+	mode := p.EffectiveErrorMode()
 	if mode == ModeJSON || mode == ModeJSONL {
 		env := contract.ErrorEnvelope{
 			SchemaVersion: p.schemaVersion(),
@@ -82,7 +82,7 @@ func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
 	return nil
 }
 
-func (p Printer) successMode() Mode {
+func (p Printer) EffectiveSuccessMode() Mode {
 	if p.Mode != ModeAuto {
 		return p.Mode
 	}
@@ -92,7 +92,7 @@ func (p Printer) successMode() Mode {
 	return ModeJSON
 }
 
-func (p Printer) errorMode() Mode {
+func (p Printer) EffectiveErrorMode() Mode {
 	if p.Mode != ModeAuto {
 		return p.Mode
 	}

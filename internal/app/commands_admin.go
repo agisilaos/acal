@@ -73,7 +73,7 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 				Backend:       ro.Backend,
 				Profile:       ro.Profile,
 				TZ:            ro.TZ,
-				OutputMode:    string(p.Mode),
+				OutputMode:    string(p.EffectiveSuccessMode()),
 				SchemaVersion: ro.SchemaVersion,
 				Checks:        checks,
 				NextSteps:     setup.NextSteps,

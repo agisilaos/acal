@@ -199,3 +199,30 @@ func TestStatusCommandNotReadyExitCode(t *testing.T) {
 		t.Fatalf("exit code mismatch: got=%d want=6", code)
 	}
 }
+
+func TestStatusCommandReportsEffectiveOutputMode(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db", Status: "ok"},
+			{Name: "calendar_db_read", Status: "ok"},
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	var out bytes.Buffer
+	cmd := NewRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"output_mode": "json"`) {
+		t.Fatalf("expected effective output_mode json in non-tty, got: %q", got)
+	}
+}
