@@ -128,6 +128,25 @@ func containsFold(items []string, val string) bool {
 	return false
 }
 
+func trimIfEdgeSpace(s string) string {
+	if s == "" {
+		return ""
+	}
+	if !isEdgeSpaceByte(s[0]) && !isEdgeSpaceByte(s[len(s)-1]) {
+		return s
+	}
+	return strings.TrimSpace(s)
+}
+
+func isEdgeSpaceByte(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\v', '\f':
+		return true
+	default:
+		return false
+	}
+}
+
 func selectField(e contract.Event, field string) string {
 	switch field {
 	case "title":

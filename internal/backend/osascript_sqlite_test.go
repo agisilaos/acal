@@ -12,7 +12,7 @@ func TestListEventsViaSQLiteReadsRows(t *testing.T) {
 	dbPath := buildSQLiteFixture(t, 3)
 	q := buildListEventsQuery(1, 10, EventFilter{})
 
-	items, err := listEventsViaSQLite(context.Background(), dbPath, q)
+	items, err := listEventsViaSQLite(context.Background(), dbPath, q, 3)
 	if err != nil {
 		t.Fatalf("listEventsViaSQLite failed: %v", err)
 	}
@@ -34,7 +34,7 @@ func BenchmarkListEventsViaSQLite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		items, err := listEventsViaSQLite(ctx, dbPath, q)
+		items, err := listEventsViaSQLite(ctx, dbPath, q, 250)
 		if err != nil {
 			b.Fatalf("listEventsViaSQLite failed: %v", err)
 		}

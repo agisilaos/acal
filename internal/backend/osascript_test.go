@@ -122,6 +122,19 @@ func TestIsTransientAppleScriptError(t *testing.T) {
 	}
 }
 
+func TestTrimIfEdgeSpace(t *testing.T) {
+	in := "calendar-id"
+	if got := trimIfEdgeSpace(in); got != in {
+		t.Fatalf("expected unchanged string, got: %q", got)
+	}
+}
+
+func TestTrimIfEdgeSpaceTrimsWhenNeeded(t *testing.T) {
+	if got := trimIfEdgeSpace("  hello\t"); got != "hello" {
+		t.Fatalf("expected trimmed value, got: %q", got)
+	}
+}
+
 func TestOsaScriptRetryPolicyFromEnv(t *testing.T) {
 	t.Setenv("ACAL_OSASCRIPT_RETRIES", "2")
 	t.Setenv("ACAL_OSASCRIPT_RETRY_BACKOFF", "150ms")
@@ -169,6 +182,18 @@ func TestBuildListEventsQueryUnknownFieldUsesNoResultsPredicate(t *testing.T) {
 	q := buildListEventsQuery(1, 2, EventFilter{Query: "x", Field: "bogus"})
 	if !strings.Contains(q, "AND 1=0") {
 		t.Fatalf("expected impossible predicate for unknown field, got: %s", q)
+	}
+}
+
+func TestInitialEventCapacity(t *testing.T) {
+	if got := initialEventCapacity(0); got != 64 {
+		t.Fatalf("unexpected default cap: got=%d want=64", got)
+	}
+	if got := initialEventCapacity(10); got != 10 {
+		t.Fatalf("unexpected explicit cap: got=%d want=10", got)
+	}
+	if got := initialEventCapacity(5000); got != 2048 {
+		t.Fatalf("unexpected capped value: got=%d want=2048", got)
 	}
 }
 

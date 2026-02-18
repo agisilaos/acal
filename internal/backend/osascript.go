@@ -115,7 +115,7 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 
 	query := buildListEventsQuery(fromCocoa, toCocoa, f)
 
-	items, err := listEventsViaSQLite(ctx, dbPath, query)
+	items, err := listEventsViaSQLite(ctx, dbPath, query, f.Limit)
 	if err != nil {
 		if !shouldFallbackFromSQLite(err) {
 			return nil, err
@@ -216,7 +216,7 @@ func checkCalendarDBReadable(ctx context.Context, dbPath string) error {
 	return db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
 }
 
-func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.Event, error) {
+func listEventsViaSQLite(ctx context.Context, dbPath, query string, expectedRows int) ([]contract.Event, error) {
 	db, err := openCalendarReadDB(dbPath)
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 	}
 	defer rows.Close()
 
-	items := make([]contract.Event, 0)
+	items := make([]contract.Event, 0, initialEventCapacity(expectedRows))
 	for rows.Next() {
 		var id, calID, calName, title, location, notes, url string
 		var startUnix, endUnix, allDayRaw, seq, updatedUnix int64
@@ -235,16 +235,16 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 			return nil, err
 		}
 		items = append(items, contract.Event{
-			ID:           strings.TrimSpace(id),
-			CalendarID:   strings.TrimSpace(calID),
-			CalendarName: strings.TrimSpace(calName),
-			Title:        strings.TrimSpace(title),
+			ID:           trimIfEdgeSpace(id),
+			CalendarID:   trimIfEdgeSpace(calID),
+			CalendarName: trimIfEdgeSpace(calName),
+			Title:        trimIfEdgeSpace(title),
 			Start:        time.Unix(startUnix, 0),
 			End:          time.Unix(endUnix, 0),
 			AllDay:       allDayRaw == 1,
-			Location:     strings.TrimSpace(location),
-			Notes:        strings.TrimSpace(notes),
-			URL:          strings.TrimSpace(url),
+			Location:     trimIfEdgeSpace(location),
+			Notes:        trimIfEdgeSpace(notes),
+			URL:          trimIfEdgeSpace(url),
 			Sequence:     int(seq),
 			UpdatedAt:    time.Unix(updatedUnix, 0),
 		})
@@ -253,6 +253,17 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 		return nil, err
 	}
 	return items, nil
+}
+
+func initialEventCapacity(expectedRows int) int {
+	switch {
+	case expectedRows <= 0:
+		return 64
+	case expectedRows > 2048:
+		return 2048
+	default:
+		return expectedRows
+	}
 }
 
 func openCalendarReadDB(dbPath string) (*sql.DB, error) {
