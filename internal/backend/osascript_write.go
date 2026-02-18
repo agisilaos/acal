@@ -26,7 +26,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	if in.ReminderOffset != nil {
 		reminderMins = strconv.Itoa(int(in.ReminderOffset.Minutes()))
 	}
-	out, err := runAppleScript([]string{
+	out, err := runAppleScript(ctx, []string{
 		`on run argv`,
 		`set calName to item 1 of argv`,
 		`set titleText to item 2 of argv`,
@@ -149,7 +149,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
 
-	out, err := runAppleScript([]string{
+	out, err := runAppleScript(ctx, []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
@@ -275,7 +275,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	return fallback, nil
 }
 
-func (b *OsaScriptBackend) DeleteEvent(_ context.Context, id string, scope RecurrenceScope) error {
+func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope RecurrenceScope) error {
 	uid, occ := parseEventID(id)
 	if uid == "" {
 		return fmt.Errorf("invalid event id")
@@ -288,7 +288,7 @@ func (b *OsaScriptBackend) DeleteEvent(_ context.Context, id string, scope Recur
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	_, err = runAppleScript([]string{
+	_, err = runAppleScript(ctx, []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,

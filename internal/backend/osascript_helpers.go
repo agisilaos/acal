@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,13 +25,13 @@ func findCalendarDB() (string, error) {
 	return "", fmt.Errorf("calendar database not found")
 }
 
-func runAppleScript(lines []string, args ...string) (string, error) {
+func runAppleScript(ctx context.Context, lines []string, args ...string) (string, error) {
 	cmdArgs := []string{"-s", "s"}
 	for _, line := range lines {
 		cmdArgs = append(cmdArgs, "-e", line)
 	}
 	cmdArgs = append(cmdArgs, args...)
-	cmd := exec.Command("osascript", cmdArgs...)
+	cmd := exec.CommandContext(ctx, "osascript", cmdArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("osascript failed: %s", strings.TrimSpace(string(out)))

@@ -19,7 +19,7 @@ type OsaScriptBackend struct{}
 
 func NewOsaScriptBackend() *OsaScriptBackend { return &OsaScriptBackend{} }
 
-func (b *OsaScriptBackend) Doctor(_ context.Context) ([]contract.DoctorCheck, error) {
+func (b *OsaScriptBackend) Doctor(ctx context.Context) ([]contract.DoctorCheck, error) {
 	checks := []contract.DoctorCheck{}
 	if _, err := exec.LookPath("osascript"); err != nil {
 		checks = append(checks, contract.DoctorCheck{Name: "osascript", Status: "fail", Message: "osascript not found in PATH"})
@@ -27,7 +27,7 @@ func (b *OsaScriptBackend) Doctor(_ context.Context) ([]contract.DoctorCheck, er
 	}
 	checks = append(checks, contract.DoctorCheck{Name: "osascript", Status: "ok", Message: "osascript found"})
 
-	_, err := runAppleScript([]string{
+	_, err := runAppleScript(ctx, []string{
 		`tell application "Calendar"`,
 		`return "ok"`,
 		`end tell`,
@@ -43,7 +43,7 @@ func (b *OsaScriptBackend) Doctor(_ context.Context) ([]contract.DoctorCheck, er
 		return checks, err
 	}
 	dbPath, _ := findCalendarDB()
-	if out, err := exec.Command("sqlite3", dbPath, "SELECT 1;").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "sqlite3", dbPath, "SELECT 1;").CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
 			msg = err.Error()
@@ -56,8 +56,8 @@ func (b *OsaScriptBackend) Doctor(_ context.Context) ([]contract.DoctorCheck, er
 	return checks, nil
 }
 
-func (b *OsaScriptBackend) ListCalendars(_ context.Context) ([]contract.Calendar, error) {
-	out, err := runAppleScript([]string{
+func (b *OsaScriptBackend) ListCalendars(ctx context.Context) ([]contract.Calendar, error) {
+	out, err := runAppleScript(ctx, []string{
 		`set rows to {}`,
 		`tell application "Calendar"`,
 		`repeat with c in calendars`,
@@ -96,7 +96,7 @@ func (b *OsaScriptBackend) ListCalendars(_ context.Context) ([]contract.Calendar
 	return items, nil
 }
 
-func (b *OsaScriptBackend) ListEvents(_ context.Context, f EventFilter) ([]contract.Event, error) {
+func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]contract.Event, error) {
 	if f.From.IsZero() || f.To.IsZero() {
 		return nil, fmt.Errorf("from/to required")
 	}
@@ -135,14 +135,14 @@ WHERE oc.next_reminder_date IS NULL
 ORDER BY oc.occurrence_start_date ASC;
 `, cocoaEpochOffset, cocoaEpochOffset, cocoaEpochOffset, fromCocoa, toCocoa)
 
-	cmd := exec.Command("sqlite3", "-tabs", dbPath, query)
+	cmd := exec.CommandContext(ctx, "sqlite3", "-tabs", dbPath, query)
 	raw, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(raw))
 		if msg == "" {
 			msg = err.Error()
 		}
-		items, fbErr := b.listEventsViaAppleScript(f)
+		items, fbErr := b.listEventsViaAppleScript(ctx, f)
 		if fbErr == nil {
 			return items, nil
 		}
@@ -201,10 +201,10 @@ ORDER BY oc.occurrence_start_date ASC;
 	return items, nil
 }
 
-func (b *OsaScriptBackend) listEventsViaAppleScript(f EventFilter) ([]contract.Event, error) {
+func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f EventFilter) ([]contract.Event, error) {
 	fromUnix := strconv.FormatInt(f.From.Unix(), 10)
 	toUnix := strconv.FormatInt(f.To.Unix(), 10)
-	out, err := runAppleScript([]string{
+	out, err := runAppleScript(ctx, []string{
 		`on cleanText(v)`,
 		`set s to v as text`,
 		`set AppleScript's text item delimiters to tab`,
@@ -238,9 +238,8 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(f EventFilter) ([]contract.E
 		`set calID to (name of c as text)`,
 		`end try`,
 		`set calName to my cleanText(name of c as text)`,
-		`repeat with e in (every event of c)`,
+		`repeat with e in (every event of c whose start date >= fromDate and start date <= toDate)`,
 		`set evStartDate to start date of e`,
-		`if ((evStartDate is greater than fromDate) or (evStartDate is equal to fromDate)) and ((evStartDate is less than toDate) or (evStartDate is equal to toDate)) then`,
 		`set evUID to (uid of e as text)`,
 		`set evTitle to my cleanText(summary of e as text)`,
 		`set evEndDate to end date of e`,
@@ -253,7 +252,6 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(f EventFilter) ([]contract.E
 		`end try`,
 		`set rowText to evUID & tab & calID & tab & calName & tab & evTitle & tab & (evStartUnix as text) & tab & (evEndUnix as text) & tab & evAllDay & tab & evLoc & tab & "" & tab & ""`,
 		`copy rowText to end of rows`,
-		`end if`,
 		`end repeat`,
 		`end repeat`,
 		`end tell`,

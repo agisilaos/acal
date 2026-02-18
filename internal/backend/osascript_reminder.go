@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (b *OsaScriptBackend) GetReminderOffset(_ context.Context, id string) (*time.Duration, error) {
+func (b *OsaScriptBackend) GetReminderOffset(ctx context.Context, id string) (*time.Duration, error) {
 	uid, occ := parseEventID(id)
 	if strings.TrimSpace(uid) == "" {
 		return nil, fmt.Errorf("invalid event id")
@@ -17,7 +17,7 @@ func (b *OsaScriptBackend) GetReminderOffset(_ context.Context, id string) (*tim
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	out, err := runAppleScript([]string{
+	out, err := runAppleScript(ctx, []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set occUnix to item 2 of argv as integer`,
