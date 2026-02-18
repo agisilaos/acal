@@ -185,12 +185,13 @@ Release scripts:
 ## Notes
 
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
-- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode to reduce lock waits and subprocess overhead.
+- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
 - `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
+- Timeout/cancel errors now include backend phase context (for example `backend.list_events timed out...`) to make hang diagnosis faster.
 - Optional transient AppleScript retry controls (off by default):
   - `ACAL_OSASCRIPT_RETRIES` (integer retries; default `0`)
   - `ACAL_OSASCRIPT_RETRY_BACKOFF` (duration; default `200ms`)

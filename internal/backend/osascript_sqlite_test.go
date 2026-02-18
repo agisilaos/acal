@@ -44,6 +44,21 @@ func BenchmarkListEventsViaSQLite(b *testing.B) {
 	}
 }
 
+func TestOpenCalendarReadDBCachesByPath(t *testing.T) {
+	dbPath := buildSQLiteFixture(t, 1)
+	db1, err := openCalendarReadDB(dbPath)
+	if err != nil {
+		t.Fatalf("openCalendarReadDB first call failed: %v", err)
+	}
+	db2, err := openCalendarReadDB(dbPath)
+	if err != nil {
+		t.Fatalf("openCalendarReadDB second call failed: %v", err)
+	}
+	if db1 != db2 {
+		t.Fatalf("expected cached database handle reuse")
+	}
+}
+
 func buildSQLiteFixture(tb testing.TB, rows int) string {
 	tb.Helper()
 	dir := tb.TempDir()

@@ -221,6 +221,7 @@ func doctorWithTimeout(ctx context.Context, be backend.Backend) ([]contract.Doct
 	v, err := withTimeout(ctx, func() ([]contract.DoctorCheck, error) {
 		return be.Doctor(ctx)
 	})
+	err = annotateBackendError(ctx, "backend.doctor", err)
 	recordTiming(ctx, "backend.doctor", time.Since(start))
 	return v, err
 }
@@ -230,6 +231,7 @@ func listCalendarsWithTimeout(ctx context.Context, be backend.Backend) ([]contra
 	v, err := withTimeout(ctx, func() ([]contract.Calendar, error) {
 		return be.ListCalendars(ctx)
 	})
+	err = annotateBackendError(ctx, "backend.list_calendars", err)
 	recordTiming(ctx, "backend.list_calendars", time.Since(start))
 	return v, err
 }
@@ -239,6 +241,7 @@ func listEventsWithTimeout(ctx context.Context, be backend.Backend, f backend.Ev
 	v, err := withTimeout(ctx, func() ([]contract.Event, error) {
 		return be.ListEvents(ctx, f)
 	})
+	err = annotateBackendError(ctx, "backend.list_events", err)
 	recordTiming(ctx, "backend.list_events", time.Since(start))
 	return v, err
 }
@@ -248,6 +251,7 @@ func getEventByIDWithTimeout(ctx context.Context, be backend.Backend, id string)
 	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.GetEventByID(ctx, id)
 	})
+	err = annotateBackendError(ctx, "backend.get_event_by_id", err)
 	recordTiming(ctx, "backend.get_event_by_id", time.Since(start))
 	return v, err
 }
@@ -257,6 +261,7 @@ func addEventWithTimeout(ctx context.Context, be backend.Backend, in backend.Eve
 	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.AddEvent(ctx, in)
 	})
+	err = annotateBackendError(ctx, "backend.add_event", err)
 	recordTiming(ctx, "backend.add_event", time.Since(start))
 	return v, err
 }
@@ -266,6 +271,7 @@ func updateEventWithTimeout(ctx context.Context, be backend.Backend, id string, 
 	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.UpdateEvent(ctx, id, in)
 	})
+	err = annotateBackendError(ctx, "backend.update_event", err)
 	recordTiming(ctx, "backend.update_event", time.Since(start))
 	return v, err
 }
@@ -275,6 +281,7 @@ func deleteEventWithTimeout(ctx context.Context, be backend.Backend, id string, 
 	_, err := withTimeout(ctx, func() (struct{}, error) {
 		return struct{}{}, be.DeleteEvent(ctx, id, scope)
 	})
+	err = annotateBackendError(ctx, "backend.delete_event", err)
 	recordTiming(ctx, "backend.delete_event", time.Since(start))
 	return err
 }
@@ -284,8 +291,25 @@ func reminderOffsetWithTimeout(ctx context.Context, be backend.Backend, id strin
 	v, err := withTimeout(ctx, func() (*time.Duration, error) {
 		return be.GetReminderOffset(ctx, id)
 	})
+	err = annotateBackendError(ctx, "backend.get_reminder_offset", err)
 	recordTiming(ctx, "backend.get_reminder_offset", time.Since(start))
 	return v, err
+}
+
+func annotateBackendError(ctx context.Context, phase string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		if deadline, ok := ctx.Deadline(); ok {
+			return fmt.Errorf("%s timed out after deadline %s: %w", phase, deadline.Format(time.RFC3339), err)
+		}
+		return fmt.Errorf("%s timed out: %w", phase, err)
+	}
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("%s canceled: %w", phase, err)
+	}
+	return err
 }
 
 func recordTiming(ctx context.Context, name string, d time.Duration) {

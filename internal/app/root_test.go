@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -363,5 +365,33 @@ func TestRenderTopLevelErrorCompletionInvalidShellJSON(t *testing.T) {
 	}
 	if !strings.Contains(got, `"unsupported shell: tcsh"`) {
 		t.Fatalf("expected unsupported shell message, got: %q", got)
+	}
+}
+
+func TestAnnotateBackendErrorDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := annotateBackendError(ctx, "backend.list_events", context.DeadlineExceeded)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "backend.list_events timed out") {
+		t.Fatalf("expected timeout annotation, got: %q", err.Error())
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected wrapped deadline exceeded error")
+	}
+}
+
+func TestAnnotateBackendErrorCanceled(t *testing.T) {
+	err := annotateBackendError(context.Background(), "backend.add_event", context.Canceled)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "backend.add_event canceled") {
+		t.Fatalf("expected canceled annotation, got: %q", err.Error())
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected wrapped canceled error")
 	}
 }

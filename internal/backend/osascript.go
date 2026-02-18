@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agis/acal/internal/contract"
@@ -20,6 +21,8 @@ const cocoaEpochOffset = int64(978307200)
 type OsaScriptBackend struct{}
 
 func NewOsaScriptBackend() *OsaScriptBackend { return &OsaScriptBackend{} }
+
+var calendarReadDBCache sync.Map
 
 func (b *OsaScriptBackend) Doctor(ctx context.Context) ([]contract.DoctorCheck, error) {
 	checks := []contract.DoctorCheck{}
@@ -209,7 +212,6 @@ func checkCalendarDBReadable(ctx context.Context, dbPath string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 	var one int
 	return db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
 }
@@ -219,7 +221,6 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -255,12 +256,22 @@ func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.
 }
 
 func openCalendarReadDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", calendarSQLiteDSN(dbPath))
+	dsn := calendarSQLiteDSN(dbPath)
+	if v, ok := calendarReadDBCache.Load(dsn); ok {
+		return v.(*sql.DB), nil
+	}
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+
+	if existing, loaded := calendarReadDBCache.LoadOrStore(dsn, db); loaded {
+		_ = db.Close()
+		return existing.(*sql.DB), nil
+	}
 	return db, nil
 }
 
