@@ -21,32 +21,19 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := readHistory()
+			paged, hasMore, err := readHistoryPage(limit, offset)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Check history file permissions", 1)
-			}
-			total := len(entries)
-			if limit <= 0 {
-				limit = 10
 			}
 			if offset < 0 {
 				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--offset must be >= 0"), "Use --offset 0 or greater", 2)
 			}
-			end := total - offset
-			if end < 0 {
-				end = 0
-			}
-			start := end - limit
-			if start < 0 {
-				start = 0
-			}
-			paged := entries[start:end]
 			meta := map[string]any{
 				"count":       len(paged),
-				"total":       total,
 				"limit":       limit,
 				"offset":      offset,
 				"next_offset": offset + len(paged),
+				"has_more":    hasMore,
 			}
 			if p.EffectiveSuccessMode() == output.ModePlain {
 				for _, e := range paged {
@@ -78,7 +65,7 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			if dryRun {
 				meta["undone"] = false
 			}
-			return p.Success(entry, meta, nil)
+			return successWithMeta(ctx, p, ro, entry, meta, nil)
 		},
 	}
 	undo.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview undo without writing")
@@ -100,7 +87,7 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			if dryRun {
 				meta["redone"] = false
 			}
-			return p.Success(entry, meta, nil)
+			return successWithMeta(ctx, p, ro, entry, meta, nil)
 		},
 	}
 	redo.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview redo without writing")

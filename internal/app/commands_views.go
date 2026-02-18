@@ -35,7 +35,7 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
 			}
-			return p.Success(items, map[string]any{"count": len(items), "day": start.Format("2006-01-02")}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "day": start.Format("2006-01-02")}, nil)
 		},
 	}
 	cmd.Flags().StringVar(&day, "day", "today", "Day selector")
@@ -73,9 +73,9 @@ func newTodayCmd(opts *globalOptions) *cobra.Command {
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)
-				return p.Success(rows, map[string]any{"count": len(rows), "view": "day", "day": start.Format("2006-01-02"), "summary": true}, nil)
+				return successWithMeta(ctx, p, ro, rows, map[string]any{"count": len(rows), "view": "day", "day": start.Format("2006-01-02"), "summary": true}, nil)
 			}
-			return p.Success(items, map[string]any{"count": len(items), "view": "day", "day": start.Format("2006-01-02")}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "view": "day", "day": start.Format("2006-01-02")}, nil)
 		},
 	}
 	cmd.Flags().StringVar(&day, "day", "today", "Day selector")
@@ -120,9 +120,9 @@ func newWeekCmd(opts *globalOptions) *cobra.Command {
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)
-				return p.Success(rows, map[string]any{"count": len(rows), "view": "week", "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "week_start": ws.String(), "summary": true}, nil)
+				return successWithMeta(ctx, p, ro, rows, map[string]any{"count": len(rows), "view": "week", "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "week_start": ws.String(), "summary": true}, nil)
 			}
-			return p.Success(items, map[string]any{"count": len(items), "view": "week", "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "week_start": ws.String()}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "view": "week", "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "week_start": ws.String()}, nil)
 		},
 	}
 	cmd.Flags().StringVar(&of, "of", "today", "Date selector within target week")
@@ -162,9 +162,9 @@ func newMonthCmd(opts *globalOptions) *cobra.Command {
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)
-				return p.Success(rows, map[string]any{"count": len(rows), "view": "month", "month": start.Format("2006-01"), "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "summary": true}, nil)
+				return successWithMeta(ctx, p, ro, rows, map[string]any{"count": len(rows), "view": "month", "month": start.Format("2006-01"), "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02"), "summary": true}, nil)
 			}
-			return p.Success(items, map[string]any{"count": len(items), "view": "month", "month": start.Format("2006-01"), "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02")}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "view": "month", "month": start.Format("2006-01"), "from": start.Format("2006-01-02"), "to": end.Format("2006-01-02")}, nil)
 		},
 	}
 	cmd.Flags().StringVar(&month, "month", "today", "Month selector: YYYY-MM, YYYY-MM-DD, today, +Nd")

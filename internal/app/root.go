@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agis/acal/internal/backend"
@@ -19,20 +21,21 @@ import (
 var backendFactory = selectBackend
 
 type globalOptions struct {
-	JSON          bool
-	JSONL         bool
-	Plain         bool
-	Fields        string
-	Quiet         bool
-	Verbose       bool
-	NoColor       bool
-	NoInput       bool
-	Profile       string
-	Config        string
-	Backend       string
-	TZ            string
-	Timeout       time.Duration
-	SchemaVersion string
+	JSON           bool
+	JSONL          bool
+	Plain          bool
+	Fields         string
+	Quiet          bool
+	Verbose        bool
+	NoColor        bool
+	NoInput        bool
+	FailOnDegraded bool
+	Profile        string
+	Config         string
+	Backend        string
+	TZ             string
+	Timeout        time.Duration
+	SchemaVersion  string
 }
 
 func Execute() int {
@@ -69,6 +72,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVarP(&opts.Verbose, "verbose", "v", false, "Verbose diagnostics")
 	root.PersistentFlags().BoolVar(&opts.NoColor, "no-color", false, "Disable color output")
 	root.PersistentFlags().BoolVar(&opts.NoInput, "no-input", false, "Disable prompts")
+	root.PersistentFlags().BoolVar(&opts.FailOnDegraded, "fail-on-degraded", false, "Fail if backend health is degraded")
 	root.PersistentFlags().StringVar(&opts.Profile, "profile", "default", "Config profile")
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "Config file path")
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript|eventkit")
@@ -130,6 +134,18 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use --backend osascript")
 		return printer, nil, nil, WrapPrinted(2, err)
 	}
+	if resolved.FailOnDegraded && !isHealthCommand(command) {
+		ctx, cancel := commandContext(resolved)
+		defer cancel()
+		checks, derr := doctorWithTimeout(ctx, be)
+		setup := buildSetupResult(checks, derr, resolved.Backend)
+		if setup.Degraded {
+			reasons := deriveDegradedReasonCodes(checks, derr)
+			err = fmt.Errorf("degraded environment: %s", strings.Join(reasons, ","))
+			_ = printer.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal status` and address next steps, or disable --fail-on-degraded")
+			return printer, nil, nil, WrapPrinted(6, err)
+		}
+	}
 	if resolved.Verbose {
 		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile, resolved.Timeout)
 	}
@@ -137,15 +153,52 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 }
 
 func commandContext(ro *globalOptions) (context.Context, context.CancelFunc) {
+	timing := &timingRecorder{calls: map[string]time.Duration{}}
+	base := context.WithValue(context.Background(), timingContextKey{}, timing)
 	if ro == nil || ro.Timeout <= 0 {
-		return context.WithCancel(context.Background())
+		return context.WithCancel(base)
 	}
-	return context.WithTimeout(context.Background(), ro.Timeout)
+	return context.WithTimeout(base, ro.Timeout)
 }
 
 type timeoutResult[T any] struct {
 	val T
 	err error
+}
+
+type timingContextKey struct{}
+
+type timingRecorder struct {
+	mu    sync.Mutex
+	calls map[string]time.Duration
+}
+
+func (r *timingRecorder) add(name string, d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls[name] += d
+}
+
+func backendTimings(ctx context.Context) map[string]string {
+	rec, _ := ctx.Value(timingContextKey{}).(*timingRecorder)
+	if rec == nil {
+		return nil
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.calls) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(rec.calls))
+	for k := range rec.calls {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		out[k] = rec.calls[k].String()
+	}
+	return out
 }
 
 func withTimeout[T any](ctx context.Context, fn func() (T, error)) (T, error) {
@@ -164,52 +217,103 @@ func withTimeout[T any](ctx context.Context, fn func() (T, error)) (T, error) {
 }
 
 func doctorWithTimeout(ctx context.Context, be backend.Backend) ([]contract.DoctorCheck, error) {
-	return withTimeout(ctx, func() ([]contract.DoctorCheck, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() ([]contract.DoctorCheck, error) {
 		return be.Doctor(ctx)
 	})
+	recordTiming(ctx, "backend.doctor", time.Since(start))
+	return v, err
 }
 
 func listCalendarsWithTimeout(ctx context.Context, be backend.Backend) ([]contract.Calendar, error) {
-	return withTimeout(ctx, func() ([]contract.Calendar, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() ([]contract.Calendar, error) {
 		return be.ListCalendars(ctx)
 	})
+	recordTiming(ctx, "backend.list_calendars", time.Since(start))
+	return v, err
 }
 
 func listEventsWithTimeout(ctx context.Context, be backend.Backend, f backend.EventFilter) ([]contract.Event, error) {
-	return withTimeout(ctx, func() ([]contract.Event, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() ([]contract.Event, error) {
 		return be.ListEvents(ctx, f)
 	})
+	recordTiming(ctx, "backend.list_events", time.Since(start))
+	return v, err
 }
 
 func getEventByIDWithTimeout(ctx context.Context, be backend.Backend, id string) (*contract.Event, error) {
-	return withTimeout(ctx, func() (*contract.Event, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.GetEventByID(ctx, id)
 	})
+	recordTiming(ctx, "backend.get_event_by_id", time.Since(start))
+	return v, err
 }
 
 func addEventWithTimeout(ctx context.Context, be backend.Backend, in backend.EventCreateInput) (*contract.Event, error) {
-	return withTimeout(ctx, func() (*contract.Event, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.AddEvent(ctx, in)
 	})
+	recordTiming(ctx, "backend.add_event", time.Since(start))
+	return v, err
 }
 
 func updateEventWithTimeout(ctx context.Context, be backend.Backend, id string, in backend.EventUpdateInput) (*contract.Event, error) {
-	return withTimeout(ctx, func() (*contract.Event, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.UpdateEvent(ctx, id, in)
 	})
+	recordTiming(ctx, "backend.update_event", time.Since(start))
+	return v, err
 }
 
 func deleteEventWithTimeout(ctx context.Context, be backend.Backend, id string, scope backend.RecurrenceScope) error {
+	start := time.Now()
 	_, err := withTimeout(ctx, func() (struct{}, error) {
 		return struct{}{}, be.DeleteEvent(ctx, id, scope)
 	})
+	recordTiming(ctx, "backend.delete_event", time.Since(start))
 	return err
 }
 
 func reminderOffsetWithTimeout(ctx context.Context, be backend.Backend, id string) (*time.Duration, error) {
-	return withTimeout(ctx, func() (*time.Duration, error) {
+	start := time.Now()
+	v, err := withTimeout(ctx, func() (*time.Duration, error) {
 		return be.GetReminderOffset(ctx, id)
 	})
+	recordTiming(ctx, "backend.get_reminder_offset", time.Since(start))
+	return v, err
+}
+
+func recordTiming(ctx context.Context, name string, d time.Duration) {
+	rec, _ := ctx.Value(timingContextKey{}).(*timingRecorder)
+	if rec == nil {
+		return
+	}
+	rec.add(name, d)
+}
+
+func successWithMeta(ctx context.Context, p output.Printer, ro *globalOptions, data any, meta map[string]any, warnings []string) error {
+	if ro != nil && ro.Verbose {
+		timings := backendTimings(ctx)
+		if len(timings) > 0 {
+			if meta == nil {
+				meta = map[string]any{}
+			}
+			meta["timings"] = timings
+			_, _ = fmt.Fprintf(p.Err, "acal: timings=%v\n", timings)
+		}
+	}
+	return p.Success(data, meta, warnings)
+}
+
+func isHealthCommand(command string) bool {
+	return strings.HasPrefix(command, "doctor") ||
+		strings.HasPrefix(command, "status") ||
+		strings.HasPrefix(command, "setup")
 }
 
 func renderTopLevelError(cmd *cobra.Command, err error) {

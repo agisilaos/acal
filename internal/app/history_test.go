@@ -150,7 +150,7 @@ func TestHistoryListPagination(t *testing.T) {
 	if !strings.Contains(got, "\"event_id\": \"e2\"") {
 		t.Fatalf("expected second-most-recent event in paged output, got: %q", got)
 	}
-	if !strings.Contains(got, "\"total\": 3") || !strings.Contains(got, "\"next_offset\": 2") {
+	if !strings.Contains(got, "\"has_more\": true") || !strings.Contains(got, "\"next_offset\": 2") {
 		t.Fatalf("expected pagination metadata, got: %q", got)
 	}
 }

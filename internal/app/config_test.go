@@ -127,6 +127,31 @@ func TestResolveGlobalOptionsTimeoutEnvAndFlag(t *testing.T) {
 	}
 }
 
+func TestResolveGlobalOptionsFailOnDegraded(t *testing.T) {
+	t.Setenv("ACAL_FAIL_ON_DEGRADED", "true")
+	defaults := &globalOptions{Profile: "default", Backend: "osascript", SchemaVersion: "v1"}
+	cmd := newTestCmd()
+	resolved, err := resolveGlobalOptions(cmd, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resolved.FailOnDegraded {
+		t.Fatalf("expected fail_on_degraded from env")
+	}
+
+	if err := cmd.ParseFlags([]string{"--fail-on-degraded=false"}); err != nil {
+		t.Fatal(err)
+	}
+	defaults.FailOnDegraded = false
+	resolved, err = resolveGlobalOptions(cmd, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FailOnDegraded {
+		t.Fatalf("expected flag override to false")
+	}
+}
+
 func newTestCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().Bool("json", false, "")
@@ -137,6 +162,7 @@ func newTestCmd() *cobra.Command {
 	cmd.Flags().Bool("verbose", false, "")
 	cmd.Flags().Bool("no-color", false, "")
 	cmd.Flags().Bool("no-input", false, "")
+	cmd.Flags().Bool("fail-on-degraded", false, "")
 	cmd.Flags().String("profile", "default", "")
 	cmd.Flags().String("config", "", "")
 	cmd.Flags().String("backend", "", "")

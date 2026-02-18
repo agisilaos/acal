@@ -60,6 +60,7 @@ acal version
 - `--plain` stable line-based output
 - `--verbose` diagnostics to stderr (resolved command/backend/mode/profile)
 - `--timeout` bounds backend calls (default `15s`, set `0` to disable)
+- `--fail-on-degraded` fails non-health commands when environment is degraded
 - `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
 
 ## Agent usage
@@ -95,6 +96,7 @@ Exit codes:
 Notes:
 - `doctor` and `status` share readiness semantics. Degraded environments can still be `ready=true` when core automation checks pass.
 - `status` and `doctor` include `degraded_reason_codes` for machine-actionable remediation.
+- `status explain` prints a concise health explanation and remediation steps.
 
 ## Config and precedence
 
@@ -107,6 +109,7 @@ Supported precedence: `flags > env > project config > user config > defaults`
   - `ACAL_BACKEND`
   - `ACAL_TIMEZONE`
   - `ACAL_TIMEOUT` (e.g. `15s`, `1m`, `0`)
+  - `ACAL_FAIL_ON_DEGRADED` (`true|false`)
   - `ACAL_OUTPUT` (`json|jsonl|plain`)
   - `ACAL_FIELDS`
   - `ACAL_NO_INPUT`
@@ -179,6 +182,10 @@ Release scripts:
 - Immediately after writes, read cache refresh can lag briefly.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
+- `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
+- Optional transient AppleScript retry controls (off by default):
+  - `ACAL_OSASCRIPT_RETRIES` (integer retries; default `0`)
+  - `ACAL_OSASCRIPT_RETRY_BACKOFF` (duration; default `200ms`)
 - Persistence files (under config dir, usually `~/.config/acal/`):
   - `config.toml`: runtime defaults/profiles.
   - `history.jsonl`: append-only write history for undo.

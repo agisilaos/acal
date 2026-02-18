@@ -12,13 +12,14 @@ import (
 )
 
 type fileConfig struct {
-	Backend  string                `toml:"backend"`
-	TZ       string                `toml:"tz"`
-	Timeout  string                `toml:"timeout"`
-	Output   string                `toml:"output"`
-	Fields   string                `toml:"fields"`
-	Profile  string                `toml:"profile"`
-	Profiles map[string]fileConfig `toml:"profiles"`
+	Backend        string                `toml:"backend"`
+	TZ             string                `toml:"tz"`
+	Timeout        string                `toml:"timeout"`
+	FailOnDegraded *bool                 `toml:"fail_on_degraded"`
+	Output         string                `toml:"output"`
+	Fields         string                `toml:"fields"`
+	Profile        string                `toml:"profile"`
+	Profiles       map[string]fileConfig `toml:"profiles"`
 }
 
 func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalOptions, error) {
@@ -76,6 +77,9 @@ func applyFileConfig(dst *globalOptions, cfg fileConfig, profile string) {
 			dst.Timeout = d
 		}
 	}
+	if cfg.FailOnDegraded != nil {
+		dst.FailOnDegraded = *cfg.FailOnDegraded
+	}
 	if cfg.Fields != "" {
 		dst.Fields = cfg.Fields
 	}
@@ -101,6 +105,9 @@ func mergeFileConfig(base, overlay fileConfig) fileConfig {
 	if overlay.Timeout != "" {
 		base.Timeout = overlay.Timeout
 	}
+	if overlay.FailOnDegraded != nil {
+		base.FailOnDegraded = overlay.FailOnDegraded
+	}
 	if overlay.Output != "" {
 		base.Output = overlay.Output
 	}
@@ -123,6 +130,11 @@ func applyEnv(dst *globalOptions) {
 	if v := env("ACAL_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			dst.Timeout = d
+		}
+	}
+	if v := env("ACAL_FAIL_ON_DEGRADED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			dst.FailOnDegraded = b
 		}
 	}
 	if v := env("ACAL_FIELDS"); v != "" {
@@ -157,6 +169,7 @@ func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
 	copyIfChanged(cmd, "verbose", func() { dst.Verbose = fromFlags.Verbose })
 	copyIfChanged(cmd, "no-color", func() { dst.NoColor = fromFlags.NoColor })
 	copyIfChanged(cmd, "no-input", func() { dst.NoInput = fromFlags.NoInput })
+	copyIfChanged(cmd, "fail-on-degraded", func() { dst.FailOnDegraded = fromFlags.FailOnDegraded })
 	copyIfChanged(cmd, "profile", func() { dst.Profile = fromFlags.Profile })
 	copyIfChanged(cmd, "config", func() { dst.Config = fromFlags.Config })
 	copyIfChanged(cmd, "backend", func() { dst.Backend = fromFlags.Backend })

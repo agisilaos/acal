@@ -196,7 +196,7 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			if q.Limit > 0 && len(items) > q.Limit {
 				items = items[:q.Limit]
 			}
-			return p.Success(items, map[string]any{"count": len(items), "name": q.Name}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "name": q.Name}, nil)
 		},
 	}
 

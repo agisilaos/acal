@@ -288,3 +288,90 @@ func TestStatusPlainOutputIsHumanReadable(t *testing.T) {
 		t.Fatalf("expected human-readable plain output, got: %q", got)
 	}
 }
+
+func TestStatusExplainProvidesNextSteps(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db_read", Status: "fail"},
+		},
+		doctorErr: errors.New("calendar db denied"),
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"status", "explain", "--plain"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status explain failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "reasons=calendar_db_read_fail,doctor_error") || !strings.Contains(got, "grant Full Disk Access") {
+		t.Fatalf("expected explanation output with reasons and steps, got: %q", got)
+	}
+}
+
+func TestFailOnDegradedBlocksNonHealthCommands(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db_read", Status: "fail"},
+		},
+		doctorErr: errors.New("calendar db denied"),
+		calendars: []contract.Calendar{{ID: "cal-1", Name: "Work", Writable: true}},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	var errOut bytes.Buffer
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"calendars", "list", "--json", "--fail-on-degraded"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected fail-on-degraded error")
+	}
+	if code := ExitCode(err); code != 6 {
+		t.Fatalf("exit code mismatch: got=%d want=6", code)
+	}
+	if got := errOut.String(); !strings.Contains(got, "degraded environment") {
+		t.Fatalf("expected degraded error message, got: %q", got)
+	}
+}
+
+func TestVerboseIncludesTimingsMetadata(t *testing.T) {
+	fb := &adminBackend{
+		checks: []contract.DoctorCheck{
+			{Name: "osascript", Status: "ok"},
+			{Name: "calendar_access", Status: "ok"},
+			{Name: "calendar_db_read", Status: "ok"},
+		},
+	}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"status", "--json", "--verbose"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "\"timings\":") {
+		t.Fatalf("expected timings metadata in json output: %q", got)
+	}
+	if got := errOut.String(); !strings.Contains(got, "acal: timings=") {
+		t.Fatalf("expected verbose timings on stderr: %q", got)
+	}
+}

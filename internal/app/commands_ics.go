@@ -42,10 +42,10 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 				if err := os.WriteFile(outPath, []byte(ics), 0o644); err != nil {
 					return failWithHint(p, contract.ErrGeneric, err, "Check destination path permissions", 1)
 				}
-				return p.Success(map[string]any{"path": outPath, "events": len(items)}, meta, nil)
+				return successWithMeta(ctx, p, ro, map[string]any{"path": outPath, "events": len(items)}, meta, nil)
 			}
 			if m := p.EffectiveSuccessMode(); m == output.ModeJSON || m == output.ModeJSONL {
-				return p.Success(map[string]any{"ics": ics, "events": len(items)}, meta, nil)
+				return successWithMeta(ctx, p, ro, map[string]any{"ics": ics, "events": len(items)}, meta, nil)
 			}
 			_, _ = fmt.Fprint(c.OutOrStdout(), ics)
 			return nil
@@ -71,6 +71,8 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			if strings.TrimSpace(filePath) == "" {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--file is required"), "Pass --file <path> or --file - for stdin", 2)
 			}
@@ -89,11 +91,9 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("strict import rejected warnings"), "Fix ICS warnings or omit --strict", 2)
 			}
 			if dryRun {
-				return p.Success(items, map[string]any{"count": len(items), "dry_run": true, "warnings": len(warnings)}, warnings)
+				return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "dry_run": true, "warnings": len(warnings)}, warnings)
 			}
 			created := make([]contract.Event, 0, len(items))
-			ctx, cancel := commandContext(ro)
-			defer cancel()
 			for _, in := range items {
 				ev, addErr := addEventWithTimeout(ctx, be, in)
 				if addErr != nil {
@@ -103,7 +103,7 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 					created = append(created, *ev)
 				}
 			}
-			return p.Success(created, map[string]any{"count": len(created), "warnings": len(warnings)}, warnings)
+			return successWithMeta(ctx, p, ro, created, map[string]any{"count": len(created), "warnings": len(warnings)}, warnings)
 		},
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "ICS file path or - for stdin")

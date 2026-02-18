@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,6 +87,89 @@ func readHistory() ([]historyEntry, error) {
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		return nil, false, fmt.Errorf("offset must be >= 0")
+	}
+	path := historyFilePath()
+	if path == "" {
+		return nil, false, nil
+	}
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	if info.Size() == 0 {
+		return nil, false, nil
+	}
+
+	need := limit + offset + 1
+	desc := make([]historyEntry, 0, need)
+	pos := info.Size()
+	remainder := ""
+	buf := make([]byte, 8192)
+	for pos > 0 && len(desc) < need {
+		n := int64(len(buf))
+		if n > pos {
+			n = pos
+		}
+		pos -= n
+		if _, err := f.ReadAt(buf[:n], pos); err != nil && err != io.EOF {
+			return nil, false, err
+		}
+		chunk := string(buf[:n]) + remainder
+		parts := strings.Split(chunk, "\n")
+		remainder = parts[0]
+		for i := len(parts) - 1; i >= 1 && len(desc) < need; i-- {
+			s := strings.TrimSpace(parts[i])
+			if s == "" {
+				continue
+			}
+			var e historyEntry
+			if err := json.Unmarshal([]byte(s), &e); err != nil {
+				continue
+			}
+			desc = append(desc, e)
+		}
+	}
+	if pos == 0 {
+		s := strings.TrimSpace(remainder)
+		if s != "" && len(desc) < need {
+			var e historyEntry
+			if err := json.Unmarshal([]byte(s), &e); err == nil {
+				desc = append(desc, e)
+			}
+		}
+	}
+
+	if len(desc) <= offset {
+		return nil, false, nil
+	}
+	end := offset + limit
+	if end > len(desc) {
+		end = len(desc)
+	}
+	slice := desc[offset:end]
+	out := make([]historyEntry, 0, len(slice))
+	for i := len(slice) - 1; i >= 0; i-- {
+		out = append(out, slice[i])
+	}
+	hasMore := len(desc) > end
+	return out, hasMore, nil
 }
 
 func writeHistory(entries []historyEntry) error {

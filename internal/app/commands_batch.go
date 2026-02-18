@@ -111,7 +111,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				_ = p.Success(results, meta, nil)
 				return WrapPrinted(1, fmt.Errorf("batch completed with %d error(s)", errorsCount))
 			}
-			return p.Success(results, meta, nil)
+			return successWithMeta(ctx, p, ro, results, meta, nil)
 		},
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "JSONL file path or - for stdin")

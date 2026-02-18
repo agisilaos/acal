@@ -58,7 +58,7 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			if p.EffectiveSuccessMode() == output.ModePlain {
 				return printDoctorPlain(cmd.OutOrStdout(), checks, setup, reasonCodes)
 			}
-			_ = p.Success(checks, meta, warnings)
+			_ = successWithMeta(ctx, p, ro, checks, meta, warnings)
 			if !setup.Ready && derr != nil {
 				return WrapPrinted(6, derr)
 			}
@@ -71,7 +71,7 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 }
 
 func newStatusCmd(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	status := &cobra.Command{
 		Use:   "status",
 		Short: "Show backend health and active runtime configuration",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -105,7 +105,7 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			if p.EffectiveSuccessMode() == output.ModePlain {
 				_ = printStatusPlain(cmd.OutOrStdout(), res)
 			} else {
-				_ = p.Success(res, meta, nil)
+				_ = successWithMeta(ctx, p, ro, res, meta, nil)
 			}
 			if !setup.Ready {
 				if derr != nil {
@@ -117,6 +117,46 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+	explain := &cobra.Command{
+		Use:   "explain",
+		Short: "Explain current health state and remediation steps",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, be, ro, err := buildContext(cmd, opts, "status.explain")
+			if err != nil {
+				return err
+			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			checks, derr := doctorWithTimeout(ctx, be)
+			setup := buildSetupResult(checks, derr, ro.Backend)
+			reasons := deriveDegradedReasonCodes(checks, derr)
+			if p.EffectiveSuccessMode() == output.ModePlain {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ready=%t degraded=%t\n", setup.Ready, setup.Degraded)
+				if len(reasons) > 0 {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "reasons=%s\n", strings.Join(reasons, ","))
+				}
+				for _, s := range setup.NextSteps {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- %s\n", s)
+				}
+			} else {
+				_ = successWithMeta(ctx, p, ro, map[string]any{
+					"ready":                 setup.Ready,
+					"degraded":              setup.Degraded,
+					"degraded_reason_codes": reasons,
+					"next_steps":            setup.NextSteps,
+				}, map[string]any{"count": len(setup.NextSteps)}, setup.Notes)
+			}
+			if !setup.Ready && derr != nil {
+				return WrapPrinted(6, derr)
+			}
+			if !setup.Ready {
+				return Wrap(6, fmt.Errorf("status not ready"))
+			}
+			return nil
+		},
+	}
+	status.AddCommand(explain)
+	return status
 }
 
 func newCalendarsCmd(opts *globalOptions) *cobra.Command {
@@ -136,7 +176,7 @@ func newCalendarsCmd(opts *globalOptions) *cobra.Command {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
 			}
-			return p.Success(items, map[string]any{"count": len(items)}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
 	calendars.AddCommand(list)

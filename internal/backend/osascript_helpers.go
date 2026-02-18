@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/agis/acal/internal/contract"
 )
@@ -31,12 +32,56 @@ func runAppleScript(ctx context.Context, lines []string, args ...string) (string
 		cmdArgs = append(cmdArgs, "-e", line)
 	}
 	cmdArgs = append(cmdArgs, args...)
-	cmd := exec.CommandContext(ctx, "osascript", cmdArgs...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("osascript failed: %s", strings.TrimSpace(string(out)))
+	retries, backoff := osascriptRetryPolicy()
+	var lastErr error
+	for attempt := 0; attempt <= retries; attempt++ {
+		cmd := exec.CommandContext(ctx, "osascript", cmdArgs...)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return string(out), nil
+		}
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		lastErr = fmt.Errorf("osascript failed: %s", msg)
+		if attempt == retries || !isTransientAppleScriptError(msg) {
+			break
+		}
+		wait := backoff * time.Duration(1<<attempt)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(wait):
+		}
 	}
-	return string(out), nil
+	return "", lastErr
+}
+
+func osascriptRetryPolicy() (int, time.Duration) {
+	retries := 0
+	if v := strings.TrimSpace(os.Getenv("ACAL_OSASCRIPT_RETRIES")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			retries = n
+		}
+	}
+	backoff := 200 * time.Millisecond
+	if v := strings.TrimSpace(os.Getenv("ACAL_OSASCRIPT_RETRY_BACKOFF")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			backoff = d
+		}
+	}
+	return retries, backoff
+}
+
+func isTransientAppleScriptError(msg string) bool {
+	s := strings.ToLower(strings.TrimSpace(msg))
+	return strings.Contains(s, "appleevent timed out") ||
+		strings.Contains(s, "(-1712)") ||
+		strings.Contains(s, "connection is invalid") ||
+		strings.Contains(s, "temporarily unavailable") ||
+		strings.Contains(s, "busy") ||
+		strings.Contains(s, "calendar got an error: not running")
 }
 
 func parseEventID(id string) (string, int64) {

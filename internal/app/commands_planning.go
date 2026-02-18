@@ -51,7 +51,7 @@ func newFreebusyCmd(opts *globalOptions) *cobra.Command {
 			for _, b := range blocks {
 				minutes += b.Minutes
 			}
-			return p.Success(blocks, map[string]any{"count": len(blocks), "busy_minutes": minutes, "events_scanned": len(items), "include_all_day": includeAllDay}, nil)
+			return successWithMeta(ctx, p, ro, blocks, map[string]any{"count": len(blocks), "busy_minutes": minutes, "events_scanned": len(items), "include_all_day": includeAllDay}, nil)
 		},
 	}
 	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name (repeatable)")
@@ -121,7 +121,7 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--to must not be earlier than --from"), "Adjust range", 2)
 			}
 			slots := buildSlots(blocks, anchorStart, anchorEnd, startHour, startMinute, endHour, endMinute, dur, step)
-			return p.Success(slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
+			return successWithMeta(ctx, p, ro, slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
 		},
 	}
 	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name (repeatable)")

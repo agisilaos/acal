@@ -4,10 +4,10 @@
   "generated_at": "\u003cgenerated\u003e",
   "meta": {
     "count": 0,
+    "has_more": false,
     "limit": 10,
     "next_offset": 0,
-    "offset": 0,
-    "total": 0
+    "offset": 0
   },
   "schema_version": "v1",
   "warnings": null

@@ -104,3 +104,27 @@ func TestResolveRecurrenceScopeValidation(t *testing.T) {
 		t.Fatalf("expected error for invalid scope")
 	}
 }
+
+func TestIsTransientAppleScriptError(t *testing.T) {
+	if !isTransientAppleScriptError("AppleEvent timed out. (-1712)") {
+		t.Fatalf("expected timeout to be transient")
+	}
+	if !isTransientAppleScriptError("connection is invalid") {
+		t.Fatalf("expected connection issue to be transient")
+	}
+	if isTransientAppleScriptError("authorization denied") {
+		t.Fatalf("expected permission denial to be non-transient")
+	}
+}
+
+func TestOsaScriptRetryPolicyFromEnv(t *testing.T) {
+	t.Setenv("ACAL_OSASCRIPT_RETRIES", "2")
+	t.Setenv("ACAL_OSASCRIPT_RETRY_BACKOFF", "150ms")
+	retries, backoff := osascriptRetryPolicy()
+	if retries != 2 {
+		t.Fatalf("retries mismatch: got=%d want=2", retries)
+	}
+	if backoff != 150000000 {
+		t.Fatalf("backoff mismatch: got=%s want=150ms", backoff)
+	}
+}

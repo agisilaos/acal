@@ -38,6 +38,8 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			loc := resolveLocation(ro.TZ)
 			defaultDuration := 60 * time.Minute
 			if strings.TrimSpace(duration) != "" {
@@ -58,10 +60,8 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 					_, _ = fmt.Fprintf(c.OutOrStdout(), "dry-run\t%s\t%s\t%s\t%s\n", in.Start.Format(time.RFC3339), in.End.Format(time.RFC3339), in.Calendar, in.Title)
 					return nil
 				}
-				return p.Success(in, map[string]any{"dry_run": true}, nil)
+				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true}, nil)
 			}
-			ctx, cancel := commandContext(ro)
-			defer cancel()
 			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
@@ -74,7 +74,7 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
-			return p.Success(item, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
 	cmd.Flags().StringVar(&calendar, "calendar", "", "Default calendar if @Calendar is missing")

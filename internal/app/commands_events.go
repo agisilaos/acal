@@ -106,7 +106,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			return p.Success(items, map[string]any{"count": len(items)}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
 	list.Flags().StringSliceVar(&listCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
@@ -138,7 +138,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			return p.Success(items, map[string]any{"count": len(items)}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
 	search.Flags().StringSliceVar(&searchCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
@@ -162,7 +162,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
-			return p.Success(item, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
 
@@ -199,7 +199,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if queryLimit > 0 && len(items) > queryLimit {
 				items = items[:queryLimit]
 			}
-			return p.Success(items, map[string]any{"count": len(items)}, nil)
+			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
 	query.Flags().StringSliceVar(&queryCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
@@ -238,7 +238,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				"events_scanned":  len(items),
 				"include_all_day": conflictsIncludeAllDay,
 			}
-			return p.Success(rows, meta, nil)
+			return successWithMeta(ctx, p, ro, rows, meta, nil)
 		},
 	}
 	conflicts.Flags().StringSliceVar(&conflictsCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
@@ -288,7 +288,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				in.RepeatRule = canonicalRepeatRule(spec)
 			}
 			if addDryRun {
-				return p.Success(in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
+				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
 			}
 			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
@@ -297,7 +297,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
-			return p.Success(item, map[string]any{"count": 1, "repeat": addRepeat}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1, "repeat": addRepeat}, nil)
 		},
 	}
 	add.Flags().StringVar(&addCalendar, "calendar", "", "Calendar ID or name")
@@ -397,7 +397,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				patch.End = &t
 			}
 			if upDryRun {
-				return p.Success(patch, map[string]any{"dry_run": true}, nil)
+				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, nil)
 			}
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
@@ -406,7 +406,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if current != nil {
 				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
 			}
-			return p.Success(item, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
 	update.Flags().StringVar(&upTitle, "title", "", "Event title")
@@ -492,14 +492,14 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				Scope: scope,
 			}
 			if mvDryRun {
-				return p.Success(patch, map[string]any{"dry_run": true}, nil)
+				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, nil)
 			}
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Move failed", 1)
 			}
 			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
-			return p.Success(item, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
 	move.Flags().StringVar(&mvTo, "to", "", "New start datetime")
@@ -576,7 +576,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				AllDay:   current.AllDay,
 			}
 			if cpDryRun {
-				return p.Success(in, map[string]any{"dry_run": true}, nil)
+				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true}, nil)
 			}
 			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
@@ -585,7 +585,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
-			return p.Success(item, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
 	copyCmd.Flags().StringVar(&cpTo, "to", "", "New start datetime")
@@ -628,7 +628,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			}
 			if delDryRun {
 				item := &contract.Event{ID: args[0]}
-				return p.Success(item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
+				return successWithMeta(ctx, p, ro, item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
 			}
 			item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
 			if getErr == nil && delIfMatch > 0 && item.Sequence != delIfMatch {
@@ -644,7 +644,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "delete", EventID: args[0], Deleted: item})
 			}
-			return p.Success(map[string]any{"deleted": true, "id": args[0], "scope": scope}, map[string]any{"count": 1}, nil)
+			return successWithMeta(ctx, p, ro, map[string]any{"deleted": true, "id": args[0], "scope": scope}, map[string]any{"count": 1}, nil)
 		},
 	}
 	deleteCmd.Flags().BoolVarP(&delForce, "force", "f", false, "Force delete without confirmation")
@@ -692,7 +692,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				meta["offset"] = offset.String()
 			}
 			if remindDryRun {
-				return p.Success(patch, meta, nil)
+				return successWithMeta(ctx, p, ro, patch, meta, nil)
 			}
 			updated, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
@@ -715,7 +715,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				meta["verified"] = true
 			}
 			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: item, Next: updated})
-			return p.Success(updated, meta, nil)
+			return successWithMeta(ctx, p, ro, updated, meta, nil)
 		},
 	}
 	remind.Flags().StringVar(&remindAt, "at", "", "Reminder offset (e.g. -15m, 1h)")
