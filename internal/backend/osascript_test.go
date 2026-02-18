@@ -133,15 +133,39 @@ func TestOsaScriptRetryPolicyFromEnv(t *testing.T) {
 }
 
 func TestBuildListEventsQueryLimitClause(t *testing.T) {
-	q := buildListEventsQuery(1, 2, 25)
+	q := buildListEventsQuery(1, 2, EventFilter{Limit: 25})
 	if !strings.Contains(q, "LIMIT 25") {
 		t.Fatalf("expected LIMIT clause in query, got: %s", q)
 	}
 }
 
 func TestBuildListEventsQueryNoLimitClause(t *testing.T) {
-	q := buildListEventsQuery(1, 2, 0)
+	q := buildListEventsQuery(1, 2, EventFilter{})
 	if strings.Contains(q, "LIMIT ") {
 		t.Fatalf("did not expect LIMIT clause in query, got: %s", q)
+	}
+}
+
+func TestBuildListEventsQueryPushesCalendarPredicate(t *testing.T) {
+	q := buildListEventsQuery(1, 2, EventFilter{Calendars: []string{"Work", "cal-1"}})
+	if !strings.Contains(q, "lower(COALESCE(c.UUID") || !strings.Contains(q, "IN ('work','cal-1')") {
+		t.Fatalf("expected calendar pushdown, got: %s", q)
+	}
+}
+
+func TestBuildListEventsQueryPushesQueryPredicate(t *testing.T) {
+	q := buildListEventsQuery(1, 2, EventFilter{Query: "Standup", Field: "title"})
+	if !strings.Contains(q, "lower(COALESCE(ci.summary, '')) LIKE") {
+		t.Fatalf("expected title LIKE pushdown, got: %s", q)
+	}
+	if strings.Contains(q, "1=0") {
+		t.Fatalf("did not expect impossible predicate for known field, got: %s", q)
+	}
+}
+
+func TestBuildListEventsQueryUnknownFieldUsesNoResultsPredicate(t *testing.T) {
+	q := buildListEventsQuery(1, 2, EventFilter{Query: "x", Field: "bogus"})
+	if !strings.Contains(q, "AND 1=0") {
+		t.Fatalf("expected impossible predicate for unknown field, got: %s", q)
 	}
 }

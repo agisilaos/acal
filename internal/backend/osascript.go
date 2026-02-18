@@ -111,7 +111,7 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 		return nil, fmt.Errorf("invalid time range")
 	}
 
-	query := buildListEventsQuery(fromCocoa, toCocoa, f.Limit)
+	query := buildListEventsQuery(fromCocoa, toCocoa, f)
 
 	cmd := exec.CommandContext(ctx, "sqlite3", "-tabs", dbPath, query)
 	raw, err := cmd.CombinedOutput()
@@ -155,31 +155,46 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 			Sequence:     seq,
 			UpdatedAt:    time.Unix(updatedUnix, 0),
 		}
-		if len(f.Calendars) > 0 && !containsFold(f.Calendars, e.CalendarID) && !containsFold(f.Calendars, e.CalendarName) {
-			continue
-		}
-		if f.Query != "" {
-			needle := strings.ToLower(f.Query)
-			field := strings.ToLower(f.Field)
-			if field == "" || field == "all" {
-				if !strings.Contains(strings.ToLower(e.Title), needle) && !strings.Contains(strings.ToLower(e.Location), needle) && !strings.Contains(strings.ToLower(e.Notes), needle) {
-					continue
-				}
-			} else {
-				if !strings.Contains(strings.ToLower(selectField(e, field)), needle) {
-					continue
-				}
-			}
-		}
 		items = append(items, e)
 	}
 	return items, nil
 }
 
-func buildListEventsQuery(fromCocoa, toCocoa int64, limit int) string {
+func buildListEventsQuery(fromCocoa, toCocoa int64, f EventFilter) string {
 	limitClause := ""
-	if limit > 0 {
-		limitClause = fmt.Sprintf("\nLIMIT %d", limit)
+	if f.Limit > 0 {
+		limitClause = fmt.Sprintf("\nLIMIT %d", f.Limit)
+	}
+	calendarClause := ""
+	if len(f.Calendars) > 0 {
+		calVals := make([]string, 0, len(f.Calendars))
+		for _, c := range f.Calendars {
+			v := strings.ToLower(strings.TrimSpace(c))
+			if v == "" {
+				continue
+			}
+			calVals = append(calVals, sqlQuote(v))
+		}
+		if len(calVals) > 0 {
+			in := strings.Join(calVals, ",")
+			calendarClause = fmt.Sprintf("\n  AND (lower(COALESCE(c.UUID, CAST(c.ROWID AS TEXT))) IN (%s) OR lower(COALESCE(c.title, '')) IN (%s))", in, in)
+		}
+	}
+	queryClause := ""
+	if q := strings.ToLower(strings.TrimSpace(f.Query)); q != "" {
+		p := sqlLikeLiteral(q)
+		switch strings.ToLower(strings.TrimSpace(f.Field)) {
+		case "", "all":
+			queryClause = fmt.Sprintf("\n  AND (lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\' OR lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\' OR lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\')", p, p, p)
+		case "title":
+			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\'", p)
+		case "location":
+			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\'", p)
+		case "notes":
+			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\'", p)
+		default:
+			queryClause = "\n  AND 1=0"
+		}
 	}
 	return fmt.Sprintf(`
 SELECT
@@ -202,8 +217,20 @@ LEFT JOIN Location l ON l.item_owner_id = ci.ROWID
 WHERE oc.next_reminder_date IS NULL
   AND oc.occurrence_start_date >= %d
   AND oc.occurrence_start_date <= %d
+%s%s
 ORDER BY oc.occurrence_start_date ASC%s;
-`, cocoaEpochOffset, cocoaEpochOffset, cocoaEpochOffset, fromCocoa, toCocoa, limitClause)
+`, cocoaEpochOffset, cocoaEpochOffset, cocoaEpochOffset, fromCocoa, toCocoa, calendarClause, queryClause, limitClause)
+}
+
+func sqlQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", "''") + "'"
+}
+
+func sqlLikeLiteral(v string) string {
+	s := strings.ReplaceAll(v, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return sqlQuote("%" + s + "%")
 }
 
 func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f EventFilter) ([]contract.Event, error) {
