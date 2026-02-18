@@ -111,29 +111,7 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 		return nil, fmt.Errorf("invalid time range")
 	}
 
-	query := fmt.Sprintf(`
-SELECT
-  (COALESCE(ci.unique_identifier, ci.UUID, CAST(ci.ROWID AS TEXT)) || '@' || CAST(oc.occurrence_start_date AS INTEGER)) AS id,
-  COALESCE(c.UUID, CAST(c.ROWID AS TEXT)) AS cal_id,
-  COALESCE(c.title, '') AS cal_name,
-  COALESCE(ci.summary, '') AS title,
-  CAST(oc.occurrence_start_date AS INTEGER) + %d AS start_unix,
-  CAST(oc.occurrence_end_date AS INTEGER) + %d AS end_unix,
-  COALESCE(ci.all_day, 0) AS all_day,
-  COALESCE(l.title, '') AS location,
-  COALESCE(ci.description, '') AS notes,
-  COALESCE(ci.url, '') AS url,
-  COALESCE(ci.sequence_num, 0) AS seq,
-  CAST(COALESCE(ci.last_modified, 0) AS INTEGER) + %d AS updated_unix
-FROM OccurrenceCache oc
-JOIN CalendarItem ci ON ci.ROWID = oc.event_id
-JOIN Calendar c ON c.ROWID = oc.calendar_id
-LEFT JOIN Location l ON l.item_owner_id = ci.ROWID
-WHERE oc.next_reminder_date IS NULL
-  AND oc.occurrence_start_date >= %d
-  AND oc.occurrence_start_date <= %d
-ORDER BY oc.occurrence_start_date ASC;
-`, cocoaEpochOffset, cocoaEpochOffset, cocoaEpochOffset, fromCocoa, toCocoa)
+	query := buildListEventsQuery(fromCocoa, toCocoa, f.Limit)
 
 	cmd := exec.CommandContext(ctx, "sqlite3", "-tabs", dbPath, query)
 	raw, err := cmd.CombinedOutput()
@@ -194,11 +172,38 @@ ORDER BY oc.occurrence_start_date ASC;
 			}
 		}
 		items = append(items, e)
-		if f.Limit > 0 && len(items) >= f.Limit {
-			break
-		}
 	}
 	return items, nil
+}
+
+func buildListEventsQuery(fromCocoa, toCocoa int64, limit int) string {
+	limitClause := ""
+	if limit > 0 {
+		limitClause = fmt.Sprintf("\nLIMIT %d", limit)
+	}
+	return fmt.Sprintf(`
+SELECT
+  (COALESCE(ci.unique_identifier, ci.UUID, CAST(ci.ROWID AS TEXT)) || '@' || CAST(oc.occurrence_start_date AS INTEGER)) AS id,
+  COALESCE(c.UUID, CAST(c.ROWID AS TEXT)) AS cal_id,
+  COALESCE(c.title, '') AS cal_name,
+  COALESCE(ci.summary, '') AS title,
+  CAST(oc.occurrence_start_date AS INTEGER) + %d AS start_unix,
+  CAST(oc.occurrence_end_date AS INTEGER) + %d AS end_unix,
+  COALESCE(ci.all_day, 0) AS all_day,
+  COALESCE(l.title, '') AS location,
+  COALESCE(ci.description, '') AS notes,
+  COALESCE(ci.url, '') AS url,
+  COALESCE(ci.sequence_num, 0) AS seq,
+  CAST(COALESCE(ci.last_modified, 0) AS INTEGER) + %d AS updated_unix
+FROM OccurrenceCache oc
+JOIN CalendarItem ci ON ci.ROWID = oc.event_id
+JOIN Calendar c ON c.ROWID = oc.calendar_id
+LEFT JOIN Location l ON l.item_owner_id = ci.ROWID
+WHERE oc.next_reminder_date IS NULL
+  AND oc.occurrence_start_date >= %d
+  AND oc.occurrence_start_date <= %d
+ORDER BY oc.occurrence_start_date ASC%s;
+`, cocoaEpochOffset, cocoaEpochOffset, cocoaEpochOffset, fromCocoa, toCocoa, limitClause)
 }
 
 func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f EventFilter) ([]contract.Event, error) {

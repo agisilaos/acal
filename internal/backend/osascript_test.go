@@ -1,6 +1,9 @@
 package backend
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseEventID(t *testing.T) {
 	uid, occ := parseEventID("ABC-123@792417600")
@@ -126,5 +129,19 @@ func TestOsaScriptRetryPolicyFromEnv(t *testing.T) {
 	}
 	if backoff != 150000000 {
 		t.Fatalf("backoff mismatch: got=%s want=150ms", backoff)
+	}
+}
+
+func TestBuildListEventsQueryLimitClause(t *testing.T) {
+	q := buildListEventsQuery(1, 2, 25)
+	if !strings.Contains(q, "LIMIT 25") {
+		t.Fatalf("expected LIMIT clause in query, got: %s", q)
+	}
+}
+
+func TestBuildListEventsQueryNoLimitClause(t *testing.T) {
+	q := buildListEventsQuery(1, 2, 0)
+	if strings.Contains(q, "LIMIT ") {
+		t.Fatalf("did not expect LIMIT clause in query, got: %s", q)
 	}
 }
