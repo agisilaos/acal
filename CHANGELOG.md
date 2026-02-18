@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.1] - 2026-02-18
+
+- perf: reuse sqlite read handles and improve timeout diagnostics (7cbc317)
+- test(perf): add sqlite read benchmark and fixture coverage (11cdad8)
+- perf(backend): harden sqlite reads and avoid fallback on context cancel (3e209b4)
+- perf(backend): use database/sql for sqlite calendar reads (1142211)
+- perf(backend): push calendar and text predicates into sqlite (c808b27)
+- perf(backend): push event limit into sqlite query (43bdeee)
+
 ## [v0.2.0] - 2026-02-18
 
 - cli: add degraded gating, status explain, timings, and fast history paging (5245e56)
