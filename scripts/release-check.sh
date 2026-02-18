@@ -33,6 +33,9 @@ go test ./...
 echo "[release-check] running vet"
 go vet ./...
 
+echo "[release-check] running docs check"
+./scripts/docs-check.sh
+
 commit="$(git rev-parse --short=12 HEAD)"
 build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 out_dir="dist/release-check"

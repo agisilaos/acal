@@ -70,9 +70,10 @@ require_clean_tree() {
 }
 
 run_preflight_checks() {
-  print -- "Running preflight checks (go test, go vet, go build)..."
+  print -- "Running preflight checks (go test, go vet, docs-check, go build)..."
   go test ./...
   go vet ./...
+  ./scripts/docs-check.sh
   go build ./cmd/acal
 }
 
