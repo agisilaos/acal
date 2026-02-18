@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -41,7 +40,9 @@ func newFreebusyCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -100,7 +101,9 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --between HH:MM-HH:MM", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}

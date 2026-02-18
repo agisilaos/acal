@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -179,7 +178,9 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query has invalid range; re-save it", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -97,11 +96,13 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			f, err := buildEventFilterWithTZ(listFrom, listTo, listCalendars, listLimit, ro.TZ)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --from and --to with RFC3339, YYYY-MM-DD, or relative values", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -125,13 +126,15 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			f, err := buildEventFilterWithTZ(searchFrom, searchTo, searchCalendars, searchLimit, ro.TZ)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
 			f.Query = args[0]
 			f.Field = searchField
-			items, err := be.ListEvents(context.Background(), f)
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -149,11 +152,13 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		Short: "Show one event",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, be, _, err := buildContext(cmd, opts, "events.show")
+			p, be, ro, err := buildContext(cmd, opts, "events.show")
 			if err != nil {
 				return err
 			}
-			item, err := be.GetEventByID(context.Background(), args[0])
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			item, err := getEventByIDWithTimeout(ctx, be, args[0])
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -172,11 +177,13 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			f, err := buildEventFilterWithTZ(queryFrom, queryTo, queryCalendars, queryLimit, ro.TZ)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -215,11 +222,13 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			f, err := buildEventFilterWithTZ(conflictsFrom, conflictsTo, conflictsCalendars, conflictsLimit, ro.TZ)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -248,6 +257,8 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			if addCalendar == "" || addTitle == "" || addStart == "" {
 				err = errors.New("--calendar, --title, and --start are required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Provide required fields", 2)
@@ -279,7 +290,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if addDryRun {
 				return p.Success(in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
 			}
-			item, err := be.AddEvent(context.Background(), in)
+			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Check calendar name and permissions", 1)
 			}
@@ -315,7 +326,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, getErr := be.GetEventByID(context.Background(), args[0])
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
 			if getErr == nil && ifMatch > 0 && current.Sequence != ifMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
@@ -386,7 +399,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if upDryRun {
 				return p.Success(patch, map[string]any{"dry_run": true}, nil)
 			}
-			item, err := be.UpdateEvent(context.Background(), args[0], patch)
+			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
 			}
@@ -422,7 +435,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, getErr := be.GetEventByID(context.Background(), args[0])
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
 			if getErr != nil {
 				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -479,7 +494,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if mvDryRun {
 				return p.Success(patch, map[string]any{"dry_run": true}, nil)
 			}
-			item, err := be.UpdateEvent(context.Background(), args[0], patch)
+			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Move failed", 1)
 			}
@@ -506,11 +521,13 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			if cpTo == "" {
 				err = errors.New("--to is required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> for the copied event start", 2)
 			}
-			current, err := be.GetEventByID(context.Background(), args[0])
+			current, err := getEventByIDWithTimeout(ctx, be, args[0])
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -561,7 +578,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if cpDryRun {
 				return p.Success(in, map[string]any{"dry_run": true}, nil)
 			}
-			item, err := be.AddEvent(context.Background(), in)
+			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Copy failed", 1)
 			}
@@ -589,6 +606,8 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			if !delForce && delConfirm != args[0] {
 				if ro.NoInput || !stdinInteractive() {
 					err = errors.New("non-interactive delete requires --force or --confirm <event-id>")
@@ -611,7 +630,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				item := &contract.Event{ID: args[0]}
 				return p.Success(item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
 			}
-			item, getErr := be.GetEventByID(context.Background(), args[0])
+			item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
 			if getErr == nil && delIfMatch > 0 && item.Sequence != delIfMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, delIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
@@ -619,7 +638,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if getErr != nil && delIfMatch > 0 {
 				return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
 			}
-			if err := be.DeleteEvent(context.Background(), args[0], scope); err != nil {
+			if err := deleteEventWithTimeout(ctx, be, args[0], scope); err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Delete failed", 1)
 			}
 			if item != nil {
@@ -642,14 +661,16 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		Short: "Set or clear reminder metadata for an event",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, be, _, err := buildContext(cmd, opts, "events.remind")
+			p, be, ro, err := buildContext(cmd, opts, "events.remind")
 			if err != nil {
 				return err
 			}
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			if (strings.TrimSpace(remindAt) == "") == !remindClear {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("use exactly one of --at or --clear"), "Set --at <duration> or --clear", 2)
 			}
-			item, err := be.GetEventByID(context.Background(), args[0])
+			item, err := getEventByIDWithTimeout(ctx, be, args[0])
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -673,11 +694,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if remindDryRun {
 				return p.Success(patch, meta, nil)
 			}
-			updated, err := be.UpdateEvent(context.Background(), args[0], patch)
+			updated, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Reminder update failed", 1)
 			}
-			observed, verifyErr := be.GetReminderOffset(context.Background(), args[0])
+			observed, verifyErr := reminderOffsetWithTimeout(ctx, be, args[0])
 			if verifyErr != nil {
 				return failWithHint(p, contract.ErrGeneric, verifyErr, "Reminder updated but verification failed; retry `acal events show <id>`", 1)
 			}

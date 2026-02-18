@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"strings"
 
 	"github.com/agis/acal/internal/contract"
@@ -27,7 +26,9 @@ func newSetupCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			checks, derr := be.Doctor(context.Background())
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			checks, derr := doctorWithTimeout(ctx, be)
 			res := buildSetupResult(checks, derr, ro.Backend)
 			_ = p.Success(res, map[string]any{
 				"ready":    res.Ready,

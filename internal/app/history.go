@@ -189,7 +189,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if strings.TrimSpace(last.EventID) == "" {
 			return historyEntry{}, nil, fmt.Errorf("invalid add history entry")
 		}
-		if err := be.DeleteEvent(ctx, last.EventID, backend.ScopeAuto); err != nil {
+		if err := deleteEventWithTimeout(ctx, be, last.EventID, backend.ScopeAuto); err != nil {
 			return historyEntry{}, nil, err
 		}
 	case "delete":
@@ -209,7 +209,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if strings.TrimSpace(in.Calendar) == "" {
 			return historyEntry{}, nil, fmt.Errorf("deleted entry missing calendar")
 		}
-		created, err := be.AddEvent(ctx, in)
+		created, err := addEventWithTimeout(ctx, be, in)
 		if err != nil {
 			return historyEntry{}, nil, err
 		}
@@ -222,7 +222,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, fmt.Errorf("invalid update history entry")
 		}
 		in := buildUpdateInputFromEvent(last.Prev)
-		if _, err := be.UpdateEvent(ctx, last.EventID, in); err != nil {
+		if _, err := updateEventWithTimeout(ctx, be, last.EventID, in); err != nil {
 			return historyEntry{}, nil, err
 		}
 	default:
@@ -276,7 +276,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			ReminderOffset: nil,
 			RepeatRule:     "",
 		}
-		created, err := be.AddEvent(ctx, in)
+		created, err := addEventWithTimeout(ctx, be, in)
 		if err != nil {
 			return historyEntry{}, nil, err
 		}
@@ -288,7 +288,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if strings.TrimSpace(last.EventID) == "" {
 			return historyEntry{}, nil, fmt.Errorf("delete redo missing event id")
 		}
-		if err := be.DeleteEvent(ctx, last.EventID, backend.ScopeAuto); err != nil {
+		if err := deleteEventWithTimeout(ctx, be, last.EventID, backend.ScopeAuto); err != nil {
 			return historyEntry{}, nil, err
 		}
 	case "update":
@@ -296,7 +296,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, fmt.Errorf("update redo requires next snapshot")
 		}
 		in := buildUpdateInputFromEvent(last.Next)
-		if _, err := be.UpdateEvent(ctx, last.EventID, in); err != nil {
+		if _, err := updateEventWithTimeout(ctx, be, last.EventID, in); err != nil {
 			return historyEntry{}, nil, err
 		}
 	default:

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"time"
 
 	"github.com/agis/acal/internal/backend"
@@ -29,7 +28,9 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 				return WrapPrinted(2, err)
 			}
 			end := start.Add(24*time.Hour - time.Second)
-			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
@@ -63,7 +64,9 @@ func newTodayCmd(opts *globalOptions) *cobra.Command {
 				return WrapPrinted(2, err)
 			}
 			start, end := dayBounds(anchor)
-			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
@@ -108,7 +111,9 @@ func newWeekCmd(opts *globalOptions) *cobra.Command {
 				return WrapPrinted(2, err)
 			}
 			start, end := weekBounds(anchor, ws)
-			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)
@@ -148,7 +153,9 @@ func newMonthCmd(opts *globalOptions) *cobra.Command {
 				return WrapPrinted(2, err)
 			}
 			start, end := monthBounds(anchor)
-			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
 				return WrapPrinted(6, err)

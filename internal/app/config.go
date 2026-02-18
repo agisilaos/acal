@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
@@ -13,6 +14,7 @@ import (
 type fileConfig struct {
 	Backend  string                `toml:"backend"`
 	TZ       string                `toml:"tz"`
+	Timeout  string                `toml:"timeout"`
 	Output   string                `toml:"output"`
 	Fields   string                `toml:"fields"`
 	Profile  string                `toml:"profile"`
@@ -69,6 +71,11 @@ func applyFileConfig(dst *globalOptions, cfg fileConfig, profile string) {
 	if cfg.TZ != "" {
 		dst.TZ = cfg.TZ
 	}
+	if cfg.Timeout != "" {
+		if d, err := time.ParseDuration(cfg.Timeout); err == nil {
+			dst.Timeout = d
+		}
+	}
 	if cfg.Fields != "" {
 		dst.Fields = cfg.Fields
 	}
@@ -91,6 +98,9 @@ func mergeFileConfig(base, overlay fileConfig) fileConfig {
 	if overlay.TZ != "" {
 		base.TZ = overlay.TZ
 	}
+	if overlay.Timeout != "" {
+		base.Timeout = overlay.Timeout
+	}
 	if overlay.Output != "" {
 		base.Output = overlay.Output
 	}
@@ -109,6 +119,11 @@ func applyEnv(dst *globalOptions) {
 	}
 	if v := env("ACAL_TIMEZONE"); v != "" {
 		dst.TZ = v
+	}
+	if v := env("ACAL_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			dst.Timeout = d
+		}
 	}
 	if v := env("ACAL_FIELDS"); v != "" {
 		dst.Fields = v
@@ -146,6 +161,7 @@ func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
 	copyIfChanged(cmd, "config", func() { dst.Config = fromFlags.Config })
 	copyIfChanged(cmd, "backend", func() { dst.Backend = fromFlags.Backend })
 	copyIfChanged(cmd, "tz", func() { dst.TZ = fromFlags.TZ })
+	copyIfChanged(cmd, "timeout", func() { dst.Timeout = fromFlags.Timeout })
 	copyIfChanged(cmd, "schema-version", func() { dst.SchemaVersion = fromFlags.SchemaVersion })
 
 	// If exactly one output mode flag is explicitly set, it overrides env/config output mode.

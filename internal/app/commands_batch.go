@@ -57,6 +57,8 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check file path or stdin", 2)
 			}
 			loc := resolveLocation(ro.TZ)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			txID := batchTxID()
 			lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
 			results := make([]map[string]any, 0)
@@ -76,7 +78,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 					continue
 				}
 				opID := batchOpID(i+1, row.Op)
-				execRes, execErr := executeBatchLine(context.Background(), be, row, loc, dryRun)
+				execRes, execErr := executeBatchLine(ctx, be, row, loc, dryRun)
 				if execErr != nil {
 					errorsCount++
 					results = append(results, map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
@@ -149,7 +151,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		if dryRun {
 			return batchExecResult{View: map[string]any{"op": "add", "input": in}}, nil
 		}
-		ev, err := be.AddEvent(ctx, in)
+		ev, err := addEventWithTimeout(ctx, be, in)
 		if err != nil {
 			return batchExecResult{}, err
 		}
@@ -203,11 +205,11 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		if dryRun {
 			return batchExecResult{View: map[string]any{"op": "update", "id": row.ID, "input": in}}, nil
 		}
-		prev, err := be.GetEventByID(ctx, row.ID)
+		prev, err := getEventByIDWithTimeout(ctx, be, row.ID)
 		if err != nil {
 			return batchExecResult{}, fmt.Errorf("unable to snapshot event before update: %w", err)
 		}
-		next, err := be.UpdateEvent(ctx, row.ID, in)
+		next, err := updateEventWithTimeout(ctx, be, row.ID, in)
 		if err != nil {
 			return batchExecResult{}, err
 		}
@@ -226,11 +228,11 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		if dryRun {
 			return batchExecResult{View: map[string]any{"op": "delete", "id": row.ID, "scope": scope}}, nil
 		}
-		ev, err := be.GetEventByID(ctx, row.ID)
+		ev, err := getEventByIDWithTimeout(ctx, be, row.ID)
 		if err != nil {
 			return batchExecResult{}, fmt.Errorf("unable to snapshot event before delete: %w", err)
 		}
-		if err := be.DeleteEvent(ctx, row.ID, scope); err != nil {
+		if err := deleteEventWithTimeout(ctx, be, row.ID, scope); err != nil {
 			return batchExecResult{}, err
 		}
 		return batchExecResult{

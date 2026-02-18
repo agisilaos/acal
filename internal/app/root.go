@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ type globalOptions struct {
 	Config        string
 	Backend       string
 	TZ            string
+	Timeout       time.Duration
 	SchemaVersion string
 }
 
@@ -43,7 +45,12 @@ func Execute() int {
 }
 
 func NewRootCommand() *cobra.Command {
-	opts := &globalOptions{Profile: "default", Backend: "osascript", SchemaVersion: contract.SchemaVersion}
+	opts := &globalOptions{
+		Profile:       "default",
+		Backend:       "osascript",
+		Timeout:       15 * time.Second,
+		SchemaVersion: contract.SchemaVersion,
+	}
 
 	root := &cobra.Command{
 		Use:           "acal",
@@ -66,6 +73,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "Config file path")
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript|eventkit")
 	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for output")
+	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
 
 	root.AddCommand(newSetupCmd(opts))
@@ -123,9 +131,85 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		return printer, nil, nil, WrapPrinted(2, err)
 	}
 	if resolved.Verbose {
-		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile)
+		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile, resolved.Timeout)
 	}
 	return printer, be, resolved, nil
+}
+
+func commandContext(ro *globalOptions) (context.Context, context.CancelFunc) {
+	if ro == nil || ro.Timeout <= 0 {
+		return context.WithCancel(context.Background())
+	}
+	return context.WithTimeout(context.Background(), ro.Timeout)
+}
+
+type timeoutResult[T any] struct {
+	val T
+	err error
+}
+
+func withTimeout[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+	ch := make(chan timeoutResult[T], 1)
+	go func() {
+		v, err := fn()
+		ch <- timeoutResult[T]{val: v, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	case res := <-ch:
+		return res.val, res.err
+	}
+}
+
+func doctorWithTimeout(ctx context.Context, be backend.Backend) ([]contract.DoctorCheck, error) {
+	return withTimeout(ctx, func() ([]contract.DoctorCheck, error) {
+		return be.Doctor(ctx)
+	})
+}
+
+func listCalendarsWithTimeout(ctx context.Context, be backend.Backend) ([]contract.Calendar, error) {
+	return withTimeout(ctx, func() ([]contract.Calendar, error) {
+		return be.ListCalendars(ctx)
+	})
+}
+
+func listEventsWithTimeout(ctx context.Context, be backend.Backend, f backend.EventFilter) ([]contract.Event, error) {
+	return withTimeout(ctx, func() ([]contract.Event, error) {
+		return be.ListEvents(ctx, f)
+	})
+}
+
+func getEventByIDWithTimeout(ctx context.Context, be backend.Backend, id string) (*contract.Event, error) {
+	return withTimeout(ctx, func() (*contract.Event, error) {
+		return be.GetEventByID(ctx, id)
+	})
+}
+
+func addEventWithTimeout(ctx context.Context, be backend.Backend, in backend.EventCreateInput) (*contract.Event, error) {
+	return withTimeout(ctx, func() (*contract.Event, error) {
+		return be.AddEvent(ctx, in)
+	})
+}
+
+func updateEventWithTimeout(ctx context.Context, be backend.Backend, id string, in backend.EventUpdateInput) (*contract.Event, error) {
+	return withTimeout(ctx, func() (*contract.Event, error) {
+		return be.UpdateEvent(ctx, id, in)
+	})
+}
+
+func deleteEventWithTimeout(ctx context.Context, be backend.Backend, id string, scope backend.RecurrenceScope) error {
+	_, err := withTimeout(ctx, func() (struct{}, error) {
+		return struct{}{}, be.DeleteEvent(ctx, id, scope)
+	})
+	return err
+}
+
+func reminderOffsetWithTimeout(ctx context.Context, be backend.Backend, id string) (*time.Duration, error) {
+	return withTimeout(ctx, func() (*time.Duration, error) {
+		return be.GetReminderOffset(ctx, id)
+	})
 }
 
 func renderTopLevelError(cmd *cobra.Command, err error) {

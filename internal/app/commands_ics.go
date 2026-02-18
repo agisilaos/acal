@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,7 +30,9 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := be.ListEvents(context.Background(), f)
+			ctx, cancel := commandContext(ro)
+			defer cancel()
+			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
@@ -43,7 +44,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 				}
 				return p.Success(map[string]any{"path": outPath, "events": len(items)}, meta, nil)
 			}
-			if p.Mode == output.ModeJSON || p.Mode == output.ModeJSONL {
+			if m := p.EffectiveSuccessMode(); m == output.ModeJSON || m == output.ModeJSONL {
 				return p.Success(map[string]any{"ics": ics, "events": len(items)}, meta, nil)
 			}
 			_, _ = fmt.Fprint(c.OutOrStdout(), ics)
@@ -91,8 +92,10 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 				return p.Success(items, map[string]any{"count": len(items), "dry_run": true, "warnings": len(warnings)}, warnings)
 			}
 			created := make([]contract.Event, 0, len(items))
+			ctx, cancel := commandContext(ro)
+			defer cancel()
 			for _, in := range items {
-				ev, addErr := be.AddEvent(context.Background(), in)
+				ev, addErr := addEventWithTimeout(ctx, be, in)
 				if addErr != nil {
 					return failWithHint(p, contract.ErrGeneric, addErr, "Import failed; retry with --dry-run for diagnostics", 1)
 				}
