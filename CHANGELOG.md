@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.0] - 2026-02-18
+
+- cli: add degraded gating, status explain, timings, and fast history paging (5245e56)
+- cli: improve health UX, plain output, and history pagination (f8403a9)
+- app: add global timeout and propagate cancellable contexts (dc2d870)
+- backend: enforce context cancellation for osascript and sqlite3 (a142e56)
+- status: report effective resolved output mode (4c53699)
+- test: lock in stderr rendering for silent CLI failures (be503cb)
+- cli: make auto output mode TTY-aware (8fe5cc5)
+- cli: make doctor emit a single payload on failure (01aaf32)
+- cli: validate delete safety before backend lookups (92f9b5c)
+- cli: render previously silent top-level errors (c9541a0)
+
 ## [v0.1.3] - 2026-02-18
 
 - docs(changelog): let release script generate v0.1.3 entry (83bc7c4)
