@@ -328,14 +328,6 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
-			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
-			if getErr == nil && ifMatch > 0 && current.Sequence != ifMatch {
-				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
-				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
-			}
-			if getErr != nil && ifMatch > 0 {
-				return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
-			}
 			scope, err := parseRecurrenceScope(upScope)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
@@ -382,9 +374,35 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 				patch.Start = &t
 			}
+			var current *contract.Event
+			getCurrent := func() error {
+				if current != nil {
+					return nil
+				}
+				item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
+				if getErr != nil {
+					return getErr
+				}
+				current = item
+				return nil
+			}
+			if ifMatch > 0 {
+				if getErr := getCurrent(); getErr != nil {
+					return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
+				}
+				if current.Sequence != ifMatch {
+					err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
+					return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+				}
+			}
 			if cmd.Flags().Changed("end") || cmd.Flags().Changed("duration") {
 				base := time.Now()
-				if current != nil {
+				if patch.Start == nil {
+					if getErr := getCurrent(); getErr == nil && current != nil {
+						base = current.Start
+					}
+				}
+				if current != nil && patch.Start == nil {
 					base = current.Start
 				}
 				if patch.Start != nil {
@@ -402,6 +420,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
+			}
+			if current == nil {
+				if getErr := getCurrent(); getErr != nil {
+					current = nil
+				}
 			}
 			if current != nil {
 				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
@@ -437,14 +460,6 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
-			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
-			if getErr != nil {
-				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
-			}
-			if mvIfMatch > 0 && current.Sequence != mvIfMatch {
-				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, mvIfMatch)
-				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
-			}
 			scope, err := parseRecurrenceScope(mvScope)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
@@ -454,20 +469,32 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> or --by <duration>", 2)
 			}
 			loc := resolveLocation(ro.TZ)
-			start := current.Start
+			var by time.Duration
+			start := time.Time{}
 			if mvTo != "" {
 				start, err = timeparse.ParseDateTime(mvTo, time.Now(), loc)
 				if err != nil {
 					return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
 				}
 			} else {
-				by, parseErr := time.ParseDuration(mvBy)
+				by, err = time.ParseDuration(mvBy)
+				parseErr := err
 				if parseErr != nil || by == 0 {
 					if parseErr == nil {
 						parseErr = errors.New("--by must not be zero")
 					}
 					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use a duration like +30m, -1h, 2h", 2)
 				}
+			}
+			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
+			if getErr != nil {
+				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
+			}
+			if mvIfMatch > 0 && current.Sequence != mvIfMatch {
+				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, mvIfMatch)
+				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+			}
+			if mvTo == "" {
 				start = current.Start.Add(by)
 			}
 
@@ -527,24 +554,30 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("--to is required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> for the copied event start", 2)
 			}
-			current, err := getEventByIDWithTimeout(ctx, be, args[0])
-			if err != nil {
-				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
-			}
 			loc := resolveLocation(ro.TZ)
 			start, err := timeparse.ParseDateTime(cpTo, time.Now(), loc)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
 			}
-			duration := current.End.Sub(current.Start)
+			var explicitDuration *time.Duration
 			if cpDuration != "" {
-				duration, err = time.ParseDuration(cpDuration)
-				if err != nil || duration <= 0 {
+				d, parseErr := time.ParseDuration(cpDuration)
+				err = parseErr
+				if err != nil || d <= 0 {
 					if err == nil {
 						err = errors.New("--duration must be positive")
 					}
 					return failWithHint(p, contract.ErrInvalidUsage, err, "Use a positive duration like 30m or 1h", 2)
 				}
+				explicitDuration = &d
+			}
+			current, err := getEventByIDWithTimeout(ctx, be, args[0])
+			if err != nil {
+				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
+			}
+			duration := current.End.Sub(current.Start)
+			if explicitDuration != nil {
+				duration = *explicitDuration
 			}
 			if duration <= 0 {
 				err = errors.New("source event has invalid duration")
@@ -670,6 +703,14 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if (strings.TrimSpace(remindAt) == "") == !remindClear {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("use exactly one of --at or --clear"), "Set --at <duration> or --clear", 2)
 			}
+			var parsedOffset *time.Duration
+			if !remindClear {
+				offset, parseErr := normalizeReminderOffset(remindAt)
+				if parseErr != nil {
+					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use duration like -15m, 10m, 1h", 2)
+				}
+				parsedOffset = &offset
+			}
 			item, err := getEventByIDWithTimeout(ctx, be, args[0])
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
@@ -684,12 +725,8 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				patch.ClearReminder = true
 				meta["cleared"] = true
 			} else {
-				offset, parseErr := normalizeReminderOffset(remindAt)
-				if parseErr != nil {
-					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use duration like -15m, 10m, 1h", 2)
-				}
-				patch.ReminderOffset = &offset
-				meta["offset"] = offset.String()
+				patch.ReminderOffset = parsedOffset
+				meta["offset"] = parsedOffset.String()
 			}
 			if remindDryRun {
 				return successWithMeta(ctx, p, ro, patch, meta, nil)
@@ -745,6 +782,18 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 	if err == nil {
 		err = errors.New("unknown error")
 	}
-	_ = printer.Error(code, err.Error(), hint)
+	meta := backendErrorMeta(err)
+	if meta != nil {
+		code = contract.ErrBackendUnavailable
+		exitCode = 6
+		kind, _ := meta["kind"].(string)
+		switch kind {
+		case "timeout":
+			hint = "Retry with a higher --timeout or run `acal doctor` for remediation"
+		case "canceled":
+			hint = "Retry command; operation was canceled"
+		}
+	}
+	_ = printer.ErrorWithMeta(code, err.Error(), hint, meta)
 	return WrapPrinted(exitCode, err)
 }

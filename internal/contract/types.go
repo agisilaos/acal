@@ -17,8 +17,9 @@ const (
 )
 
 type ErrorEnvelope struct {
-	SchemaVersion string    `json:"schema_version"`
-	Error         ErrorBody `json:"error"`
+	SchemaVersion string         `json:"schema_version"`
+	Error         ErrorBody      `json:"error"`
+	Meta          map[string]any `json:"meta,omitempty"`
 }
 
 type ErrorBody struct {

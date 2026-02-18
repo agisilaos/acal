@@ -64,11 +64,16 @@ func (p Printer) Success(data any, meta map[string]any, warnings []string) error
 }
 
 func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
+	return p.ErrorWithMeta(code, message, hint, nil)
+}
+
+func (p Printer) ErrorWithMeta(code contract.ErrorCode, message, hint string, meta map[string]any) error {
 	mode := p.EffectiveErrorMode()
 	if mode == ModeJSON || mode == ModeJSONL {
 		env := contract.ErrorEnvelope{
 			SchemaVersion: p.schemaVersion(),
 			Error:         contract.ErrorBody{Code: code, Message: message, Hint: hint},
+			Meta:          meta,
 		}
 		enc := json.NewEncoder(p.errWriter())
 		enc.SetIndent("", "  ")

@@ -79,3 +79,16 @@ func TestPrinterErrorRespectsNoColorAndEnv(t *testing.T) {
 		t.Fatalf("did not expect ansi color codes with --no-color in %q", got)
 	}
 }
+
+func TestPrinterErrorWithMetaJSON(t *testing.T) {
+	var errb bytes.Buffer
+	p := Printer{Mode: ModeJSON, Err: &errb}
+	meta := map[string]any{"phase": "backend.list_events", "kind": "timeout"}
+	if err := p.ErrorWithMeta(contract.ErrBackendUnavailable, "timeout", "retry", meta); err != nil {
+		t.Fatalf("error output failed: %v", err)
+	}
+	got := errb.String()
+	if !strings.Contains(got, `"meta":`) || !strings.Contains(got, `"phase": "backend.list_events"`) {
+		t.Fatalf("expected meta fields in json error, got: %q", got)
+	}
+}

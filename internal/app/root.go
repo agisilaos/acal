@@ -296,22 +296,6 @@ func reminderOffsetWithTimeout(ctx context.Context, be backend.Backend, id strin
 	return v, err
 }
 
-func annotateBackendError(ctx context.Context, phase string, err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		if deadline, ok := ctx.Deadline(); ok {
-			return fmt.Errorf("%s timed out after deadline %s: %w", phase, deadline.Format(time.RFC3339), err)
-		}
-		return fmt.Errorf("%s timed out: %w", phase, err)
-	}
-	if errors.Is(err, context.Canceled) {
-		return fmt.Errorf("%s canceled: %w", phase, err)
-	}
-	return err
-}
-
 func recordTiming(ctx context.Context, name string, d time.Duration) {
 	rec, _ := ctx.Value(timingContextKey{}).(*timingRecorder)
 	if rec == nil {

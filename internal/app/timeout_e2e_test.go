@@ -69,6 +69,9 @@ func TestEventsListTimeoutIncludesBackendPhase(t *testing.T) {
 	if !strings.Contains(got, "backend.list_events timed out") {
 		t.Fatalf("expected backend phase timeout in output, got: %q", got)
 	}
+	if !strings.Contains(got, `"meta":`) || !strings.Contains(got, `"kind": "timeout"`) || !strings.Contains(got, `"phase": "backend.list_events"`) {
+		t.Fatalf("expected structured timeout meta in output, got: %q", got)
+	}
 }
 
 func TestEventsAddTimeoutIncludesBackendPhase(t *testing.T) {
@@ -94,11 +97,14 @@ func TestEventsAddTimeoutIncludesBackendPhase(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected timeout error")
 	}
-	if code := ExitCode(err); code != 1 {
-		t.Fatalf("exit code mismatch: got=%d want=1 err=%v out=%q errOut=%q", code, err, out.String(), errOut.String())
+	if code := ExitCode(err); code != 6 {
+		t.Fatalf("exit code mismatch: got=%d want=6 err=%v out=%q errOut=%q", code, err, out.String(), errOut.String())
 	}
 	got := out.String() + errOut.String()
 	if !strings.Contains(got, "backend.add_event timed out") {
 		t.Fatalf("expected backend phase timeout in output, got: %q", got)
+	}
+	if !strings.Contains(got, `"code": "BACKEND_UNAVAILABLE"`) || !strings.Contains(got, `"kind": "timeout"`) || !strings.Contains(got, `"phase": "backend.add_event"`) {
+		t.Fatalf("expected backend-unavailable timeout metadata in output, got: %q", got)
 	}
 }

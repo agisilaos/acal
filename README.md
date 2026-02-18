@@ -194,6 +194,7 @@ Release scripts:
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
 - `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
 - Timeout/cancel errors now include backend phase context (for example `backend.list_events timed out...`) to make hang diagnosis faster.
+- JSON error payloads include structured timeout/cancel metadata under `meta` (`phase`, `kind`, `deadline`) and map these failures to `BACKEND_UNAVAILABLE` for consistent automation handling.
 - Optional transient AppleScript retry controls (off by default):
   - `ACAL_OSASCRIPT_RETRIES` (integer retries; default `0`)
   - `ACAL_OSASCRIPT_RETRY_BACKOFF` (duration; default `200ms`)
