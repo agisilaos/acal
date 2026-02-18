@@ -39,7 +39,7 @@ func newSetupCmd(opts *globalOptions) *cobra.Command {
 			}
 			if derr != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` again after applying next_steps")
-				return Wrap(6, derr)
+				return WrapPrinted(6, derr)
 			}
 			return Wrap(6, err)
 		},

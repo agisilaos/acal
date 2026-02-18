@@ -727,5 +727,5 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 		err = errors.New("unknown error")
 	}
 	_ = printer.Error(code, err.Error(), hint)
-	return Wrap(exitCode, err)
+	return WrapPrinted(exitCode, err)
 }

@@ -1,10 +1,14 @@
 package app
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type AppError struct {
-	Code int
-	Err  error
+	Code    int
+	Err     error
+	Printed bool
 }
 
 func (e AppError) Error() string {
@@ -21,11 +25,19 @@ func Wrap(code int, err error) error {
 	return AppError{Code: code, Err: err}
 }
 
+func WrapPrinted(code int, err error) error {
+	if err == nil {
+		return nil
+	}
+	return AppError{Code: code, Err: err, Printed: true}
+}
+
 func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	if e, ok := err.(AppError); ok {
+	var e AppError
+	if errors.As(err, &e) {
 		return e.Code
 	}
 	return 1

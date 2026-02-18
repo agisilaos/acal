@@ -44,14 +44,14 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				parsed, err := time.ParseDuration(duration)
 				if err != nil || parsed <= 0 {
 					_ = p.Error(contract.ErrInvalidUsage, "invalid --duration", "Use a positive Go duration like 30m or 1h")
-					return Wrap(2, fmt.Errorf("invalid --duration: %q", duration))
+					return WrapPrinted(2, fmt.Errorf("invalid --duration: %q", duration))
 				}
 				defaultDuration = parsed
 			}
 			in, err := parseQuickAddInput(args[0], time.Now(), loc, calendar, defaultDuration, allDay)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), `Example: acal quick-add "tomorrow 10:00 Standup @Work 30m"`)
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			if dryRun {
 				return p.Success(in, map[string]any{"dry_run": true}, nil)
@@ -59,7 +59,7 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 			item, err := be.AddEvent(context.Background(), in)
 			if err != nil {
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
-				return Wrap(1, err)
+				return WrapPrinted(1, err)
 			}
 			if item != nil {
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})

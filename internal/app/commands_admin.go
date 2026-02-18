@@ -45,7 +45,7 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			_ = p.Success(checks, map[string]any{"count": len(checks)}, nil)
 			if derr != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run with GUI session and grant Calendar automation permission")
-				return Wrap(6, derr)
+				return WrapPrinted(6, derr)
 			}
 			return nil
 		},
@@ -82,7 +82,7 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			if !setup.Ready {
 				if derr != nil {
 					_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` for remediation")
-					return Wrap(6, derr)
+					return WrapPrinted(6, derr)
 				}
 				return Wrap(6, fmt.Errorf("status not ready"))
 			}
@@ -104,7 +104,7 @@ func newCalendarsCmd(opts *globalOptions) *cobra.Command {
 			items, err := be.ListCalendars(context.Background())
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
-				return Wrap(6, err)
+				return WrapPrinted(6, err)
 			}
 			return p.Success(items, map[string]any{"count": len(items)}, nil)
 		},

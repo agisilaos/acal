@@ -26,13 +26,13 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 			start, err := timeparse.ParseDateTime(day, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use day as today, tomorrow, +Nd, or YYYY-MM-DD")
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			end := start.Add(24*time.Hour - time.Second)
 			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
-				return Wrap(6, err)
+				return WrapPrinted(6, err)
 			}
 			return p.Success(items, map[string]any{"count": len(items), "day": start.Format("2006-01-02")}, nil)
 		},
@@ -60,13 +60,13 @@ func newTodayCmd(opts *globalOptions) *cobra.Command {
 			anchor, err := timeparse.ParseDateTime(day, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --day as today, tomorrow, +Nd, or YYYY-MM-DD")
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			start, end := dayBounds(anchor)
 			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
-				return Wrap(6, err)
+				return WrapPrinted(6, err)
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)
@@ -100,18 +100,18 @@ func newWeekCmd(opts *globalOptions) *cobra.Command {
 			anchor, err := timeparse.ParseDateTime(of, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --of as today, tomorrow, +Nd, or YYYY-MM-DD")
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			ws, err := parseWeekStart(weekStart)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --week-start monday|sunday")
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			start, end := weekBounds(anchor, ws)
 			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
-				return Wrap(6, err)
+				return WrapPrinted(6, err)
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)
@@ -145,13 +145,13 @@ func newMonthCmd(opts *globalOptions) *cobra.Command {
 			anchor, err := parseMonthOrDate(month, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --month as YYYY-MM, YYYY-MM-DD, or relative day syntax")
-				return Wrap(2, err)
+				return WrapPrinted(2, err)
 			}
 			start, end := monthBounds(anchor)
 			items, err := be.ListEvents(context.Background(), backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})
 			if err != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, err.Error(), "Run `acal doctor` for remediation")
-				return Wrap(6, err)
+				return WrapPrinted(6, err)
 			}
 			if summary {
 				rows := summarizeEventsByDay(items, start, end, loc)

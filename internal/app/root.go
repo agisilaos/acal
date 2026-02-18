@@ -36,6 +36,9 @@ type globalOptions struct {
 func Execute() int {
 	cmd := NewRootCommand()
 	err := cmd.Execute()
+	if err != nil {
+		renderTopLevelError(cmd, err)
+	}
 	return ExitCode(err)
 }
 
@@ -117,12 +120,58 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 	be, err := backendFactory(resolved.Backend)
 	if err != nil {
 		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use --backend osascript")
-		return printer, nil, nil, Wrap(2, err)
+		return printer, nil, nil, WrapPrinted(2, err)
 	}
 	if resolved.Verbose {
 		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile)
 	}
 	return printer, be, resolved, nil
+}
+
+func renderTopLevelError(cmd *cobra.Command, err error) {
+	var appErr AppError
+	if errors.As(err, &appErr) && appErr.Printed {
+		return
+	}
+	if wantsStructuredErrorOutput(os.Args[1:]) {
+		printer := output.Printer{
+			Mode:          output.ModeJSON,
+			SchemaVersion: contract.SchemaVersion,
+			Err:           cmd.ErrOrStderr(),
+		}
+		_ = printer.Error(errorCodeForExit(ExitCode(err)), err.Error(), "")
+		return
+	}
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err.Error())
+}
+
+func wantsStructuredErrorOutput(args []string) bool {
+	for _, arg := range args {
+		switch {
+		case arg == "--":
+			return false
+		case arg == "--json", arg == "--jsonl":
+			return true
+		case strings.HasPrefix(arg, "--json="), strings.HasPrefix(arg, "--jsonl="):
+			return true
+		}
+	}
+	return false
+}
+
+func errorCodeForExit(code int) contract.ErrorCode {
+	switch code {
+	case 2:
+		return contract.ErrInvalidUsage
+	case 4:
+		return contract.ErrNotFound
+	case 6:
+		return contract.ErrBackendUnavailable
+	case 7:
+		return contract.ErrConcurrency
+	default:
+		return contract.ErrGeneric
+	}
 }
 
 func selectBackend(name string) (backend.Backend, error) {

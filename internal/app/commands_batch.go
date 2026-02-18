@@ -107,7 +107,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 			meta := map[string]any{"count": len(results), "errors": errorsCount, "dry_run": dryRun, "tx_id": txID}
 			if errorsCount > 0 {
 				_ = p.Success(results, meta, nil)
-				return Wrap(1, fmt.Errorf("batch completed with %d error(s)", errorsCount))
+				return WrapPrinted(1, fmt.Errorf("batch completed with %d error(s)", errorsCount))
 			}
 			return p.Success(results, meta, nil)
 		},
