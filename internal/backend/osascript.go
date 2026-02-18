@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agis/acal/internal/contract"
+	_ "modernc.org/sqlite"
 )
 
 const cocoaEpochOffset = int64(978307200)
@@ -43,11 +45,8 @@ func (b *OsaScriptBackend) Doctor(ctx context.Context) ([]contract.DoctorCheck, 
 		return checks, err
 	}
 	dbPath, _ := findCalendarDB()
-	if out, err := exec.CommandContext(ctx, "sqlite3", dbPath, "SELECT 1;").CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
+	if err := checkCalendarDBReadable(ctx, dbPath); err != nil {
+		msg := err.Error()
 		checks = append(checks, contract.DoctorCheck{Name: "calendar_db_read", Status: "fail", Message: msg})
 		return checks, fmt.Errorf("calendar database exists but is not readable: %s", msg)
 	}
@@ -113,13 +112,9 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 
 	query := buildListEventsQuery(fromCocoa, toCocoa, f)
 
-	cmd := exec.CommandContext(ctx, "sqlite3", "-tabs", dbPath, query)
-	raw, err := cmd.CombinedOutput()
+	items, err := listEventsViaSQLite(ctx, dbPath, query)
 	if err != nil {
-		msg := strings.TrimSpace(string(raw))
-		if msg == "" {
-			msg = err.Error()
-		}
+		msg := err.Error()
 		items, fbErr := b.listEventsViaAppleScript(ctx, f)
 		if fbErr == nil {
 			return items, nil
@@ -130,33 +125,6 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 		return nil, fmt.Errorf("sqlite3 query failed: %s (fallback failed: %v)", msg, fbErr)
 	}
 
-	lines := splitLines(string(raw))
-	items := make([]contract.Event, 0, len(lines))
-	for _, line := range lines {
-		parts := strings.Split(line, "\t")
-		if len(parts) < 12 {
-			continue
-		}
-		startUnix, _ := strconv.ParseInt(parts[4], 10, 64)
-		endUnix, _ := strconv.ParseInt(parts[5], 10, 64)
-		seq, _ := strconv.Atoi(parts[10])
-		updatedUnix, _ := strconv.ParseInt(parts[11], 10, 64)
-		e := contract.Event{
-			ID:           strings.TrimSpace(parts[0]),
-			CalendarID:   strings.TrimSpace(parts[1]),
-			CalendarName: strings.TrimSpace(parts[2]),
-			Title:        strings.TrimSpace(parts[3]),
-			Start:        time.Unix(startUnix, 0),
-			End:          time.Unix(endUnix, 0),
-			AllDay:       strings.TrimSpace(parts[6]) == "1" || strings.EqualFold(strings.TrimSpace(parts[6]), "true"),
-			Location:     strings.TrimSpace(parts[7]),
-			Notes:        strings.TrimSpace(parts[8]),
-			URL:          strings.TrimSpace(parts[9]),
-			Sequence:     seq,
-			UpdatedAt:    time.Unix(updatedUnix, 0),
-		}
-		items = append(items, e)
-	}
 	return items, nil
 }
 
@@ -231,6 +199,56 @@ func sqlLikeLiteral(v string) string {
 	s = strings.ReplaceAll(s, "%", "\\%")
 	s = strings.ReplaceAll(s, "_", "\\_")
 	return sqlQuote("%" + s + "%")
+}
+
+func checkCalendarDBReadable(ctx context.Context, dbPath string) error {
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var one int
+	return db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
+}
+
+func listEventsViaSQLite(ctx context.Context, dbPath, query string) ([]contract.Event, error) {
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]contract.Event, 0)
+	for rows.Next() {
+		var id, calID, calName, title, location, notes, url string
+		var startUnix, endUnix, allDayRaw, seq, updatedUnix int64
+		if err := rows.Scan(&id, &calID, &calName, &title, &startUnix, &endUnix, &allDayRaw, &location, &notes, &url, &seq, &updatedUnix); err != nil {
+			return nil, err
+		}
+		items = append(items, contract.Event{
+			ID:           strings.TrimSpace(id),
+			CalendarID:   strings.TrimSpace(calID),
+			CalendarName: strings.TrimSpace(calName),
+			Title:        strings.TrimSpace(title),
+			Start:        time.Unix(startUnix, 0),
+			End:          time.Unix(endUnix, 0),
+			AllDay:       allDayRaw == 1,
+			Location:     strings.TrimSpace(location),
+			Notes:        strings.TrimSpace(notes),
+			URL:          strings.TrimSpace(url),
+			Sequence:     int(seq),
+			UpdatedAt:    time.Unix(updatedUnix, 0),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f EventFilter) ([]contract.Event, error) {
