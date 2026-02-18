@@ -2,26 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v0.1.3] - 2026-02-17
-
-### Added
-
-- Recurrence rule validation now enforces a strict grammar for `events add|update --repeat` with canonical normalization (`daily|weekly|monthly|yearly`, bounded counts, weekday validation).
-- Reminder verification now performs backend readback after `events remind` writes and fails on mismatch/unverifiable state.
-- Batch execution now emits stable transaction metadata:
-  - `tx_id` per batch run
-  - `op_id` per operation row
-- History snapshots now persist transactional identifiers (`tx_id`, `op_id`) for deterministic recovery of partial batch runs.
-
-### Changed
-
-- `events batch` machine output contract now includes `tx_id` in row data and meta.
-- JSON golden normalization now scrubs dynamic transaction values to keep contract tests stable.
-- Documentation now explicitly covers:
-  - strict repeat grammar
-  - reminder readback verification behavior
-  - transactional batch/history identifiers and schema
-
 ## [v0.1.2] - 2026-02-17
 
 - Harden agent workflows, add strict modes, redo, and backend reminder/recurrence fields (523e1ed)
