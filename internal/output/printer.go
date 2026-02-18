@@ -33,7 +33,7 @@ type Printer struct {
 }
 
 func (p Printer) Success(data any, meta map[string]any, warnings []string) error {
-	switch p.Mode {
+	switch p.successMode() {
 	case ModeJSON:
 		env := contract.SuccessEnvelope{
 			SchemaVersion: p.schemaVersion(),
@@ -64,7 +64,8 @@ func (p Printer) Success(data any, meta map[string]any, warnings []string) error
 }
 
 func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
-	if p.Mode == ModeJSON || p.Mode == ModeJSONL {
+	mode := p.errorMode()
+	if mode == ModeJSON || mode == ModeJSONL {
 		env := contract.ErrorEnvelope{
 			SchemaVersion: p.schemaVersion(),
 			Error:         contract.ErrorBody{Code: code, Message: message, Hint: hint},
@@ -79,6 +80,26 @@ func (p Printer) Error(code contract.ErrorCode, message, hint string) error {
 	}
 	_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\n", p.errorLabel(), message)
 	return nil
+}
+
+func (p Printer) successMode() Mode {
+	if p.Mode != ModeAuto {
+		return p.Mode
+	}
+	if p.writerIsTerminal(p.outWriter()) {
+		return ModePlain
+	}
+	return ModeJSON
+}
+
+func (p Printer) errorMode() Mode {
+	if p.Mode != ModeAuto {
+		return p.Mode
+	}
+	if p.writerIsTerminal(p.errWriter()) {
+		return ModePlain
+	}
+	return ModeJSON
 }
 
 func (p Printer) schemaVersion() string {
@@ -139,12 +160,19 @@ func (p Printer) colorsEnabled() bool {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
 		return false
 	}
-	if f, ok := p.errWriter().(*os.File); ok {
-		if info, err := f.Stat(); err == nil {
-			return info.Mode()&os.ModeCharDevice != 0
-		}
+	return p.writerIsTerminal(p.errWriter())
+}
+
+func (p Printer) writerIsTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
 	}
-	return false
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func flatten(v any, fields []string) string {
