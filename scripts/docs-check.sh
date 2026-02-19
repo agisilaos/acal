@@ -115,30 +115,30 @@ PY
 
 echo "[docs-check] checking roadmap completion markers"
 if [[ -f docs/cli-expansion-roadmap.md ]]; then
-  if rg -n -- '- \[ \] Step ' docs/cli-expansion-roadmap.md >/dev/null; then
+  if grep -nE -- '- \[ \] Step ' docs/cli-expansion-roadmap.md >/dev/null; then
     echo "error: docs/cli-expansion-roadmap.md still has unchecked steps" >&2
     exit 1
   fi
 fi
 
 echo "[docs-check] checking release script references in README"
-if ! rg -q 'scripts/release-check.sh' README.md; then
+if ! grep -Fq 'scripts/release-check.sh' README.md; then
   echo "error: README missing scripts/release-check.sh reference" >&2
   exit 1
 fi
-if ! rg -q 'scripts/release.sh' README.md; then
+if ! grep -Fq 'scripts/release.sh' README.md; then
   echo "error: README missing scripts/release.sh reference" >&2
   exit 1
 fi
-if ! rg -q 'make release-check VERSION=vX.Y.Z' README.md; then
+if ! grep -Fq 'make release-check VERSION=vX.Y.Z' README.md; then
   echo "error: README missing make release-check usage" >&2
   exit 1
 fi
-if ! rg -q 'make release VERSION=vX.Y.Z' README.md; then
+if ! grep -Fq 'make release VERSION=vX.Y.Z' README.md; then
   echo "error: README missing make release usage" >&2
   exit 1
 fi
-if ! rg -q 'make release-dry-run VERSION=vX.Y.Z' README.md; then
+if ! grep -Fq 'make release-dry-run VERSION=vX.Y.Z' README.md; then
   echo "error: README missing make release-dry-run usage" >&2
   exit 1
 fi
