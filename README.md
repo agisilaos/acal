@@ -15,6 +15,10 @@ Verify:
 acal version
 ```
 
+## Usage
+
+Use the implemented command set below and the examples section for common flows.
+
 ## Implemented
 
 - `doctor`
@@ -53,7 +57,7 @@ acal version
 - `queries run`
 - `queries delete`
 
-## Output modes
+## Output
 
 - `--json` envelope output for agents
 - `--jsonl` streaming object-per-line output
@@ -185,6 +189,11 @@ Release scripts:
 ./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
+
+## Docs
+
+- CLI roadmap and expansion plan: `docs/cli-expansion-roadmap.md`
+- Release notes history: `CHANGELOG.md`
 
 ## Notes
 

@@ -16,6 +16,9 @@ if [[ ! -f CHANGELOG.md ]]; then
   exit 1
 fi
 
+echo "[docs-check] validating shared docs contract"
+python3 ./scripts/docs-contract-check.py
+
 echo "[docs-check] validating README command examples against CLI help"
 python3 - <<'PY'
 import re
