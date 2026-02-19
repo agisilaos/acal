@@ -130,5 +130,17 @@ if ! rg -q 'scripts/release.sh' README.md; then
   echo "error: README missing scripts/release.sh reference" >&2
   exit 1
 fi
+if ! rg -q 'make release-check VERSION=vX.Y.Z' README.md; then
+  echo "error: README missing make release-check usage" >&2
+  exit 1
+fi
+if ! rg -q 'make release VERSION=vX.Y.Z' README.md; then
+  echo "error: README missing make release usage" >&2
+  exit 1
+fi
+if ! rg -q 'make release-dry-run VERSION=vX.Y.Z' README.md; then
+  echo "error: README missing make release-dry-run usage" >&2
+  exit 1
+fi
 
 echo "[docs-check] ok"

@@ -131,14 +131,16 @@ make docs-check
 ## Release
 
 ```bash
-make release-check VERSION=v0.1.0
-make release VERSION=v0.1.0
+make release-check VERSION=vX.Y.Z
+make release-dry-run VERSION=vX.Y.Z
+make release VERSION=vX.Y.Z
 ```
 
 Release scripts:
 - `scripts/docs-check.sh` validates README command examples against the live CLI command tree and checks docs consistency markers.
-- `scripts/release-check.sh` validates changelog format, runs tests/vet/docs-check, and verifies stamped version output.
-- `scripts/release.sh` updates changelog, runs preflight checks (tests/vet/docs-check/build), builds darwin archives, publishes GitHub release/tag, and updates Homebrew tap formula.
+- `scripts/release-check.sh` validates version/tag preconditions, runs tests/vet/docs-check/format checks, and verifies stamped version output.
+- `scripts/release.sh` runs `release-check`, updates changelog from git history, builds darwin archives, publishes GitHub release/tag, and updates the Homebrew tap formula.
+- `scripts/release.sh --dry-run` builds release archives without changelog/tag/push/release/tap writes.
 - If the repository does not exist yet, `scripts/release.sh` creates it as **private** by default.
 - CI runs `release-check` on `pull_request` and pushes to `main` via `.github/workflows/release-check.yml`.
 

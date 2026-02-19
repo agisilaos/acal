@@ -15,13 +15,33 @@ fi
 command -v go >/dev/null 2>&1 || die "go is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 command -v git >/dev/null 2>&1 || die "git is required"
+command -v gh >/dev/null 2>&1 || die "gh is required"
 
-version="${1:-}"
+dry_run=0
+version=""
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run)
+      dry_run=1
+      ;;
+    *)
+      if [[ -z "$version" ]]; then
+        version="$arg"
+      else
+        die "usage: scripts/release.sh vX.Y.Z [--dry-run]"
+      fi
+      ;;
+  esac
+done
+
 if [[ -z "${version}" ]]; then
-  die "usage: scripts/release.sh vX.Y.Z"
+  die "usage: scripts/release.sh vX.Y.Z [--dry-run]"
 fi
 if [[ "${version}" != v* ]]; then
   version="v${version}"
+fi
+if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  die "version must match vX.Y.Z (got: ${version})"
 fi
 
 repo_owner="agisilaos"
@@ -67,14 +87,6 @@ ensure_github_repo() {
 require_clean_tree() {
   git diff --quiet || die "working tree has unstaged changes"
   git diff --cached --quiet || die "index has staged changes"
-}
-
-run_preflight_checks() {
-  print -- "Running preflight checks (go test, go vet, docs-check, go build)..."
-  go test ./...
-  go vet ./...
-  ./scripts/docs-check.sh
-  go build ./cmd/acal
 }
 
 last_tag() {
@@ -170,11 +182,6 @@ build_dist() {
 
 create_github_release() {
   local ver="$1"
-  if ! command -v gh >/dev/null 2>&1; then
-    print -- "gh not found; skipping GitHub release creation"
-    return 0
-  fi
-
   local notes_file
   notes_file="$(mktemp)"
   python3 - "$ver" >"${notes_file}" <<'PY'
@@ -199,10 +206,6 @@ PY
 }
 
 ensure_homebrew_tap_repo() {
-  if ! command -v gh >/dev/null 2>&1; then
-    print -- "gh not found; skipping Homebrew tap automation"
-    return 1
-  fi
   if gh repo view "${tap_repo}" >/dev/null 2>&1; then
     return 0
   fi
@@ -214,7 +217,7 @@ ensure_homebrew_tap_repo() {
 update_homebrew_formula() {
   local ver="$1"
   local ver_nov="${ver#v}"
-  ensure_homebrew_tap_repo || return 0
+  ensure_homebrew_tap_repo
 
   local sha_arm sha_amd
   sha_arm="$(awk -v f="acal_${ver}_darwin_arm64.tar.gz" '$2==f{print $1}' dist/SHA256SUMS.txt | head -n 1 || true)"
@@ -344,7 +347,16 @@ main() {
   local prev
   prev="$(last_tag)"
 
-  run_preflight_checks
+  print -- "Running release checks..."
+  ./scripts/release-check.sh "${version}"
+
+  if [[ "${dry_run}" -eq 1 ]]; then
+    print -- "Dry run enabled: changelog/tag/push/release/tap updates will be skipped."
+    print -- "Building dist artifacts..."
+    build_dist "${version}"
+    print -- "Dry run complete. Artifacts: dist/"
+    return 0
+  fi
 
   update_changelog "${version}" "${prev}"
   git commit -m "chore(release): ${version}"
@@ -352,18 +364,18 @@ main() {
   print -- "Building dist artifacts..."
   build_dist "${version}"
 
-  print -- "Pushing main commit..."
-  git push origin main
-
-  print -- "Creating GitHub release..."
-  create_github_release "${version}"
-
   if ! git rev-parse "${version}" >/dev/null 2>&1; then
     git tag "${version}"
   fi
 
+  print -- "Pushing main commit..."
+  git push origin main
+
   print -- "Pushing release tag..."
   git push origin "${version}"
+
+  print -- "Creating GitHub release..."
+  create_github_release "${version}"
 
   print -- "Updating Homebrew tap..."
   update_homebrew_formula "${version}"
