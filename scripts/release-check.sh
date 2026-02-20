@@ -51,7 +51,42 @@ echo "[release-check] running docs check"
 ./scripts/docs-check.sh
 
 echo "[release-check] checking go module metadata"
-go mod tidy -diff
+if go help mod tidy 2>/dev/null | grep -Fq -- "-diff"; then
+  go mod tidy -diff
+else
+  before_mod="$(mktemp)"
+  before_sum="$(mktemp)"
+  had_sum=0
+  cp go.mod "$before_mod"
+  if [[ -f go.sum ]]; then
+    cp go.sum "$before_sum"
+    had_sum=1
+  fi
+
+  go mod tidy
+  if ! diff -u "$before_mod" go.mod >/dev/null || ( [[ "$had_sum" -eq 1 ]] && ! diff -u "$before_sum" go.sum >/dev/null ) || ( [[ "$had_sum" -eq 0 ]] && [[ -f go.sum ]] ); then
+    diff -u "$before_mod" go.mod >&2 || true
+    if [[ "$had_sum" -eq 1 ]]; then
+      diff -u "$before_sum" go.sum >&2 || true
+    fi
+    cp "$before_mod" go.mod
+    if [[ "$had_sum" -eq 1 ]]; then
+      cp "$before_sum" go.sum
+    else
+      rm -f go.sum
+    fi
+    rm -f "$before_mod" "$before_sum"
+    die "go.mod/go.sum drift detected; run go mod tidy"
+  fi
+
+  cp "$before_mod" go.mod
+  if [[ "$had_sum" -eq 1 ]]; then
+    cp "$before_sum" go.sum
+  else
+    rm -f go.sum
+  fi
+  rm -f "$before_mod" "$before_sum"
+fi
 
 echo "[release-check] checking format"
 if [[ -n "$(gofmt -l cmd internal)" ]]; then
