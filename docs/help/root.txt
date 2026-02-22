@@ -1,0 +1,45 @@
+Query and manage Apple Calendar from terminal workflows and agents
+
+Usage:
+  acal [command]
+
+Available Commands:
+  agenda      Human-friendly agenda for a day
+  calendars   Calendar resources
+  completion  Generate shell completion scripts
+  doctor      Run preflight checks
+  events      Event resources
+  freebusy    Show merged busy intervals for a range
+  help        Help about any command
+  history     Inspect and undo write history
+  month       List events for a month
+  queries     Saved query presets
+  quick-add   Create an event from natural text
+  setup       Run first-time setup checks and permission guidance
+  slots       Find available slots in a range
+  status      Show backend health and active runtime configuration
+  today       List events for a day (defaults to today)
+  version     Print version information
+  view        View events in common calendar ranges
+  week        List events for a week
+
+Flags:
+      --backend string          Backend: osascript|eventkit (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+  -h, --help                    help for acal
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for output
+  -v, --verbose                 Verbose diagnostics
+      --version                 version for acal
+
+Use "acal [command] --help" for more information about a command.

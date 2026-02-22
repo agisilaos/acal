@@ -19,6 +19,9 @@ fi
 echo "[docs-check] validating shared docs contract"
 python3 ./scripts/docs-contract-check.py
 
+echo "[docs-check] checking CLI help snapshots"
+./scripts/check-help.sh
+
 echo "[docs-check] validating README command examples against CLI help"
 python3 - <<'PY'
 import re
