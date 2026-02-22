@@ -37,8 +37,18 @@ fi
 [[ -f README.md ]] || die "README.md not found"
 [[ -f CHANGELOG.md ]] || die "CHANGELOG.md not found"
 
+if grep -qE '^## \[Unreleased\]' CHANGELOG.md; then
+  die "CHANGELOG.md must not contain ## [Unreleased]"
+fi
+
 if grep -Fq "## [$version]" CHANGELOG.md; then
   die "CHANGELOG.md already contains $version"
+fi
+
+# Keep release-check CI portable on stock GitHub runners.
+# Do not require non-default tooling such as rg/jq/yq/fd in checked scripts.
+if grep -R -nE '(^|[[:space:]])(r[g]|j[q]|y[q]|f[d])([[:space:]]|$)' scripts >/dev/null; then
+  die "scripts/ uses non-portable tooling (rg/jq/yq/fd). Use grep/sed/awk or install tools explicitly in workflow."
 fi
 
 echo "[release-check] running tests"
