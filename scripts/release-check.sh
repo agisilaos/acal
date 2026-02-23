@@ -41,8 +41,12 @@ if grep -qE '^## \[Unreleased\]' CHANGELOG.md; then
   die "CHANGELOG.md must not contain ## [Unreleased]"
 fi
 
-if grep -Fq "## [$version]" CHANGELOG.md; then
-  die "CHANGELOG.md already contains $version"
+first_release_heading="$(grep -m1 -E '^## \[v[0-9]+\.[0-9]+\.[0-9]+\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$' CHANGELOG.md || true)"
+if [[ -z "$first_release_heading" ]]; then
+  die "CHANGELOG.md must contain at least one release heading in format: ## [vX.Y.Z] - YYYY-MM-DD"
+fi
+if [[ "$first_release_heading" != "## [$version] - "* ]]; then
+  die "CHANGELOG.md top release heading must be ## [$version] - YYYY-MM-DD before release"
 fi
 
 # Keep release-check CI portable on stock GitHub runners.
