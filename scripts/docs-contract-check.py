@@ -10,11 +10,14 @@ from pathlib import Path
 
 REQUIRED_HEADINGS = ["Install", "Usage", "Release", "Docs"]
 REQUIRED_RELEASE_LINES = [
+    "make changelog-context VERSION=vX.Y.Z",
     "make release-check VERSION=vX.Y.Z",
     "make release-dry-run VERSION=vX.Y.Z",
     "make release VERSION=vX.Y.Z",
+    "scripts/changelog-context.sh",
     "scripts/release-check.sh",
     "scripts/release.sh",
+    "RELEASING.md",
 ]
 FORBIDDEN_PATTERNS = [
     re.compile(r"^## \[Unreleased\]", flags=re.MULTILINE),

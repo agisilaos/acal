@@ -19,6 +19,7 @@ Usage:
 
 Environment:
   HOMEBREW_TAP_REPO      Tap repo in owner/name format (default: agisilaos/homebrew-tap)
+  HOMEBREW_TAP_URL       Tap clone URL (default: https://github.com/<HOMEBREW_TAP_REPO>.git)
   HOMEBREW_TAP_BRANCH    Tap branch to push (default: main)
   HOMEBREW_FORMULA_PATH  Path in tap repo (default: ${DEFAULT_FORMULA_PATH})
   GITHUB_REPO            owner/name for release URL generation (auto-detected from git remote)
@@ -65,6 +66,46 @@ checksum_file() {
   fi
 }
 
+render_formula() {
+  local target="$1"
+  mkdir -p "$(dirname "$target")"
+  cat <<FORMULA > "$target"
+class ${formula_class} < Formula
+  desc "${formula_desc}"
+  homepage "https://github.com/${repo_slug}"
+  license "${formula_license}"
+  version "${version_no_v}"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/${repo_slug}/releases/download/${VERSION}/${ARTIFACT_NAME}_${version_no_v}_darwin_arm64.tar.gz"
+      sha256 "${arm64_sha}"
+    else
+      url "https://github.com/${repo_slug}/releases/download/${VERSION}/${ARTIFACT_NAME}_${version_no_v}_darwin_amd64.tar.gz"
+      sha256 "${amd64_sha}"
+    end
+  end
+
+  def install
+    bin.install "${CLI_NAME}"
+  end
+
+  test do
+    shell_output("#{bin}/${CLI_NAME} ${formula_test_arg}")
+  end
+end
+FORMULA
+}
+
+validate_formula() {
+  local target="$1"
+  grep -Fq "${ARTIFACT_NAME}_${version_no_v}_darwin_arm64.tar.gz" "$target" || err "formula missing arm64 artifact URL"
+  grep -Fq "${ARTIFACT_NAME}_${version_no_v}_darwin_amd64.tar.gz" "$target" || err "formula missing amd64 artifact URL"
+  grep -Fq "sha256 \"${arm64_sha}\"" "$target" || err "formula missing arm64 checksum"
+  grep -Fq "sha256 \"${amd64_sha}\"" "$target" || err "formula missing amd64 checksum"
+  grep -Fq "bin.install \"${CLI_NAME}\"" "$target" || err "formula installs the wrong binary"
+}
+
 DRY_RUN=0
 VERSION=""
 
@@ -104,17 +145,21 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-if [[ -n "$current_branch" && "$current_branch" != "$DEFAULT_BRANCH" ]]; then
-  echo "warning: current branch is $current_branch, expected $DEFAULT_BRANCH" >&2
+if [[ "$current_branch" != "$DEFAULT_BRANCH" ]]; then
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "warning: current branch is ${current_branch:-detached HEAD}, expected $DEFAULT_BRANCH" >&2
+  else
+    err "release must run from $DEFAULT_BRANCH (current: ${current_branch:-detached HEAD})"
+  fi
 fi
 
-if [[ -n "$(git status --porcelain)" ]]; then
-  err "working tree is not clean"
+if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+  err "working tree is not clean (tracked, staged, or untracked changes present)"
 fi
 
 ./scripts/release-check.sh "$VERSION"
 
-for cmd in go git gh tar; do
+for cmd in go git gh tar python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     err "required command not found: $cmd"
   fi
@@ -179,34 +224,38 @@ ${amd64_sha}  ${ARTIFACT_NAME}_${version_no_v}_darwin_amd64.tar.gz
 ${arm64_sha}  ${ARTIFACT_NAME}_${version_no_v}_darwin_arm64.tar.gz
 SUMS
 
-notes=""
-if prev_tag="$(git describe --tags --abbrev=0 2>/dev/null)"; then
-  notes="$(git log --pretty='- %s (%h)' "${prev_tag}..HEAD" 2>/dev/null || true)"
-else
-  notes="$(git log --pretty='- %s (%h)' 2>/dev/null || true)"
-fi
-
-if [[ -z "$notes" ]]; then
-  notes="- No user-facing changes"
-fi
+notes_path="$tmp_dir/release-notes.md"
+python3 ./scripts/changelog-section.py --version "$VERSION" --extract > "$notes_path"
 
 if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null 2>&1; then
   err "tag $VERSION already exists"
 fi
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-  echo "dry-run: would create tag $VERSION"
-  echo "dry-run: would create GitHub release for $VERSION"
-  echo "dry-run: would upload $amd64_archive"
-  echo "dry-run: would upload $arm64_archive"
-  echo "dry-run: would upload $sha_sums_path"
-  echo "dry-run: would update Homebrew formula ${FORMULA_NAME}.rb"
-  exit 0
-fi
-
 repo_slug="${GITHUB_REPO:-$(detect_repo_slug)}"
 if [[ -z "$repo_slug" ]]; then
   err "could not determine GitHub repo slug"
+fi
+tap_repo="${HOMEBREW_TAP_REPO:-agisilaos/homebrew-tap}"
+tap_url="${HOMEBREW_TAP_URL:-https://github.com/${tap_repo}.git}"
+tap_branch="${HOMEBREW_TAP_BRANCH:-main}"
+formula_path="${HOMEBREW_FORMULA_PATH:-${DEFAULT_FORMULA_PATH}}"
+formula_class="$(to_class_name "$FORMULA_NAME")"
+formula_desc="${HOMEBREW_DESC:-${DEFAULT_HOMEBREW_DESC}}"
+formula_license="${HOMEBREW_LICENSE:-${DEFAULT_HOMEBREW_LICENSE}}"
+formula_test_arg="${HOMEBREW_TEST_ARG:-${DEFAULT_HOMEBREW_TEST_ARG}}"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  dry_formula_path="$dist_dir/homebrew/$formula_path"
+  render_formula "$dry_formula_path"
+  validate_formula "$dry_formula_path"
+  echo "dry-run: rendered and validated Homebrew formula $dry_formula_path"
+  echo "dry-run: would create tag $VERSION"
+  echo "dry-run: would create GitHub release for $VERSION using $notes_path"
+  echo "dry-run: would upload $amd64_archive"
+  echo "dry-run: would upload $arm64_archive"
+  echo "dry-run: would upload $sha_sums_path"
+  echo "dry-run: would update Homebrew formula $formula_path"
+  exit 0
 fi
 
 git tag "$VERSION"
@@ -217,48 +266,14 @@ gh release create "$VERSION" \
   "$arm64_archive" \
   "$sha_sums_path" \
   --title "$VERSION" \
-  --notes "$notes"
-
-tap_repo="${HOMEBREW_TAP_REPO:-agisilaos/homebrew-tap}"
-tap_branch="${HOMEBREW_TAP_BRANCH:-main}"
-formula_path="${HOMEBREW_FORMULA_PATH:-${DEFAULT_FORMULA_PATH}}"
-formula_class="$(to_class_name "$FORMULA_NAME")"
-formula_desc="${HOMEBREW_DESC:-${DEFAULT_HOMEBREW_DESC}}"
-formula_license="${HOMEBREW_LICENSE:-${DEFAULT_HOMEBREW_LICENSE}}"
-formula_test_arg="${HOMEBREW_TEST_ARG:-${DEFAULT_HOMEBREW_TEST_ARG}}"
+  --notes-file "$notes_path"
 
 tap_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir" "$tap_dir"' EXIT
 
-git clone "git@github.com:${tap_repo}.git" "$tap_dir"
-mkdir -p "$(dirname "$tap_dir/$formula_path")"
-
-cat <<FORMULA > "$tap_dir/$formula_path"
-class ${formula_class} < Formula
-  desc "${formula_desc}"
-  homepage "https://github.com/${repo_slug}"
-  license "${formula_license}"
-  version "${version_no_v}"
-
-  on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/${repo_slug}/releases/download/${VERSION}/${ARTIFACT_NAME}_${version_no_v}_darwin_arm64.tar.gz"
-      sha256 "${arm64_sha}"
-    else
-      url "https://github.com/${repo_slug}/releases/download/${VERSION}/${ARTIFACT_NAME}_${version_no_v}_darwin_amd64.tar.gz"
-      sha256 "${amd64_sha}"
-    end
-  end
-
-  def install
-    bin.install "${CLI_NAME}"
-  end
-
-  test do
-    shell_output("#{bin}/${CLI_NAME} ${formula_test_arg}")
-  end
-end
-FORMULA
+git clone "$tap_url" "$tap_dir"
+render_formula "$tap_dir/$formula_path"
+validate_formula "$tap_dir/$formula_path"
 
 (
   cd "$tap_dir"

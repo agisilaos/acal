@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt fmt-check check-help docs-check release-check release release-dry-run
+.PHONY: build test vet fmt fmt-check check-help docs-check changelog-context release-check release-check-ci release release-dry-run
 
 build:
 	go build -o acal ./cmd/acal
@@ -21,9 +21,16 @@ check-help:
 docs-check:
 	./scripts/docs-check.sh
 
+changelog-context:
+	@if [ -z "$(VERSION)" ]; then echo "VERSION is required (e.g. make changelog-context VERSION=v0.1.0)"; exit 2; fi
+	./scripts/changelog-context.sh "$(VERSION)"
+
 release-check:
 	@if [ -z "$(VERSION)" ]; then echo "VERSION is required (e.g. make release-check VERSION=v0.1.0)"; exit 2; fi
 	./scripts/release-check.sh "$(VERSION)"
+
+release-check-ci:
+	./scripts/release-check.sh --ci
 
 release:
 	@if [ -z "$(VERSION)" ]; then echo "VERSION is required (e.g. make release VERSION=v0.1.0)"; exit 2; fi

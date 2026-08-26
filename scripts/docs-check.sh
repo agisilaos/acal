@@ -16,6 +16,20 @@ if [[ ! -f CHANGELOG.md ]]; then
   exit 1
 fi
 
+for file in RELEASING.md scripts/changelog-context.sh scripts/changelog-section.py; do
+  if [[ ! -f "$file" ]]; then
+    echo "error: $file not found" >&2
+    exit 1
+  fi
+done
+
+for target in changelog-context release-check release-check-ci release-dry-run release; do
+  if ! grep -qE "^${target}:" Makefile; then
+    echo "error: Makefile missing target: $target" >&2
+    exit 1
+  fi
+done
+
 echo "[docs-check] validating shared docs contract"
 python3 ./scripts/docs-contract-check.py
 
