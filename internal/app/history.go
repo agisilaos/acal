@@ -111,7 +111,10 @@ func appendHistory(entry historyEntry) error {
 }
 
 func readHistory() ([]historyEntry, error) {
-	path := historyFilePath()
+	return readHistoryEntries(historyFilePath())
+}
+
+func readHistoryEntries(path string) ([]historyEntry, error) {
 	if path == "" {
 		return nil, nil
 	}
@@ -253,36 +256,7 @@ func redoFilePath() string {
 }
 
 func readRedoHistory() ([]historyEntry, error) {
-	path := redoFilePath()
-	if path == "" {
-		return nil, nil
-	}
-	f, err := openHistoryFile(path, os.O_RDONLY)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	out := make([]historyEntry, 0, len(lines))
-	for _, line := range lines {
-		s := strings.TrimSpace(line)
-		if s == "" {
-			continue
-		}
-		var e historyEntry
-		if err := json.Unmarshal([]byte(s), &e); err != nil {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, nil
+	return readHistoryEntries(redoFilePath())
 }
 
 func writeRedoHistory(entries []historyEntry) error {
