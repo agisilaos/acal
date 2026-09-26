@@ -191,23 +191,44 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 			}
 			in.Start = &ts
 		}
-		if row.End != nil || row.Duration != nil {
-			base := time.Now()
-			if in.Start != nil {
-				base = *in.Start
-			}
-			end, endErr := resolveBatchEnd(row, base, loc)
-			if endErr != nil {
-				return batchExecResult{}, endErr
+		var duration time.Duration
+		if row.End != nil {
+			end, parseErr := timeparse.ParseDateTime(*row.End, time.Now(), loc)
+			if parseErr != nil {
+				return batchExecResult{}, fmt.Errorf("invalid end")
 			}
 			in.End = &end
+		} else if row.Duration != nil {
+			duration, err = time.ParseDuration(*row.Duration)
+			if err != nil || duration <= 0 {
+				return batchExecResult{}, fmt.Errorf("invalid duration")
+			}
+		}
+		needsStart := in.Start == nil && (in.End != nil || duration > 0)
+		if in.Start != nil && in.End != nil && !in.End.After(*in.Start) {
+			return batchExecResult{}, fmt.Errorf("end must be after start")
+		}
+		var prev *contract.Event
+		if !dryRun || needsStart {
+			prev, err = getEventByIDWithTimeout(ctx, be, row.ID)
+			if err != nil {
+				return batchExecResult{}, fmt.Errorf("unable to snapshot event before update: %w", err)
+			}
+		}
+		if in.End != nil || duration > 0 {
+			start := in.Start
+			if needsStart {
+				start = &prev.Start
+			}
+			if duration > 0 {
+				end := start.Add(duration)
+				in.End = &end
+			} else if needsStart && !in.End.After(*start) {
+				return batchExecResult{}, fmt.Errorf("end must be after start")
+			}
 		}
 		if dryRun {
 			return batchExecResult{View: map[string]any{"op": "update", "id": row.ID, "input": in}}, nil
-		}
-		prev, err := getEventByIDWithTimeout(ctx, be, row.ID)
-		if err != nil {
-			return batchExecResult{}, fmt.Errorf("unable to snapshot event before update: %w", err)
 		}
 		next, err := updateEventWithTimeout(ctx, be, row.ID, in)
 		if err != nil {

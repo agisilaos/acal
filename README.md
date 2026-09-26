@@ -85,6 +85,10 @@ Recommended automation patterns:
   - inspect `acal history list --json`
   - rollback with `acal history undo --json`
   - re-apply with `acal history redo --json`
+- Update timing and history:
+  - Ordinary and batch updates calculate duration from the supplied start, or read the existing start when omitted. End-only updates also read the existing start to validate ordering; read failures stop these updates, including previews.
+  - Field-only previews and previews with all required timing values supplied do not read the event unless a sequence check is requested.
+  - Update history uses a snapshot taken before writing. If that read fails, an ordinary update can proceed without history when neither timing nor sequence validation needs it; batch updates require the snapshot. These reads do not make updates atomic against concurrent external changes, and previously recorded incorrect history is not repaired.
 - Reminder writes are read-back verified:
   - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 
