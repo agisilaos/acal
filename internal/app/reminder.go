@@ -14,6 +14,9 @@ func normalizeReminderOffset(v string) (time.Duration, error) {
 	if d == 0 {
 		return 0, fmt.Errorf("offset must not be zero")
 	}
+	if d%time.Minute != 0 {
+		return 0, fmt.Errorf("offset must be a whole number of minutes")
+	}
 	if d > 0 {
 		d = -d
 	}
