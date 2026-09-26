@@ -29,20 +29,21 @@ func (e *queryError) Unwrap() error { return e.err }
 
 // executeQuery limits results only after filtering and sorting the complete range.
 func executeQuery(ctx context.Context, be backend.Backend, filter backend.EventFilter, wheres []string, sortField, order string) ([]contract.Event, *queryError) {
+	preds, err := parsePredicates(wheres)
+	if err != nil {
+		return nil, &queryError{stage: queryParse, err: err}
+	}
+	matchers, err := compilePredicates(preds)
+	if err != nil {
+		return nil, &queryError{stage: queryApply, err: err}
+	}
 	limit := filter.Limit
 	filter.Limit = 0
 	items, err := listEventsWithTimeout(ctx, be, filter)
 	if err != nil {
 		return nil, &queryError{stage: queryFetch, err: err}
 	}
-	preds, err := parsePredicates(wheres)
-	if err != nil {
-		return nil, &queryError{stage: queryParse, err: err}
-	}
-	items, err = applyPredicates(items, preds)
-	if err != nil {
-		return nil, &queryError{stage: queryApply, err: err}
-	}
+	items = applyPredicates(items, matchers)
 	sortEvents(items, sortField, order)
 	if limit > 0 && len(items) > limit {
 		items = items[:limit]
@@ -86,92 +87,96 @@ func parsePredicates(wheres []string) ([]predicate, error) {
 	return out, nil
 }
 
-func applyPredicates(items []contract.Event, preds []predicate) ([]contract.Event, error) {
-	filtered := make([]contract.Event, 0, len(items))
-	for _, e := range items {
-		ok, err := matchesAll(e, preds)
+type eventMatcher func(contract.Event) bool
+
+func compilePredicates(preds []predicate) ([]eventMatcher, error) {
+	matchers := make([]eventMatcher, 0, len(preds))
+	for _, p := range preds {
+		matcher, err := compilePredicate(p)
 		if err != nil {
 			return nil, err
 		}
-		if ok {
+		matchers = append(matchers, matcher)
+	}
+	return matchers, nil
+}
+
+func compilePredicate(p predicate) (eventMatcher, error) {
+	var field func(contract.Event) string
+	switch p.field {
+	case "title":
+		field = func(e contract.Event) string { return e.Title }
+	case "calendar", "calendar_name":
+		field = func(e contract.Event) string { return e.CalendarName }
+	case "calendar_id":
+		field = func(e contract.Event) string { return e.CalendarID }
+	case "location":
+		field = func(e contract.Event) string { return e.Location }
+	case "notes":
+		field = func(e contract.Event) string { return e.Notes }
+	case "id":
+		field = func(e contract.Event) string { return e.ID }
+	case "start":
+		return compileTimePredicate(func(e contract.Event) time.Time { return e.Start }, p)
+	case "end":
+		return compileTimePredicate(func(e contract.Event) time.Time { return e.End }, p)
+	default:
+		return nil, fmt.Errorf("unsupported field in --where: %s", p.field)
+	}
+
+	expected := strings.ToLower(p.value)
+	switch p.op {
+	case "==":
+		return func(e contract.Event) bool { return strings.ToLower(field(e)) == expected }, nil
+	case "!=":
+		return func(e contract.Event) bool { return strings.ToLower(field(e)) != expected }, nil
+	case "~":
+		return func(e contract.Event) bool { return strings.Contains(strings.ToLower(field(e)), expected) }, nil
+	default:
+		return nil, fmt.Errorf("operator %s not supported for string fields", p.op)
+	}
+}
+
+func compileTimePredicate(field func(contract.Event) time.Time, p predicate) (eventMatcher, error) {
+	expected, err := time.Parse(time.RFC3339, p.value)
+	if err != nil {
+		return nil, fmt.Errorf("time predicate expects RFC3339 value, got %q", p.value)
+	}
+	switch p.op {
+	case "==":
+		return func(e contract.Event) bool { return field(e).Equal(expected) }, nil
+	case "!=":
+		return func(e contract.Event) bool { return !field(e).Equal(expected) }, nil
+	case ">":
+		return func(e contract.Event) bool { return field(e).After(expected) }, nil
+	case ">=":
+		return func(e contract.Event) bool { return !field(e).Before(expected) }, nil
+	case "<":
+		return func(e contract.Event) bool { return field(e).Before(expected) }, nil
+	case "<=":
+		return func(e contract.Event) bool { return !field(e).After(expected) }, nil
+	default:
+		return nil, fmt.Errorf("operator %s not supported for time fields", p.op)
+	}
+}
+
+func applyPredicates(items []contract.Event, matchers []eventMatcher) []contract.Event {
+	filtered := make([]contract.Event, 0, len(items))
+	for _, e := range items {
+		if matchesAll(e, matchers) {
 			filtered = append(filtered, e)
 		}
 	}
-	return filtered, nil
+	return filtered
 }
 
-func matchesAll(e contract.Event, preds []predicate) (bool, error) {
-	for _, p := range preds {
-		ok, err := matchesOne(e, p)
-		if err != nil {
-			return false, err
-		}
-		if !ok {
-			return false, nil
+func matchesAll(e contract.Event, matchers []eventMatcher) bool {
+	for _, match := range matchers {
+		if !match(e) {
+			return false
 		}
 	}
-	return true, nil
-}
-
-func matchesOne(e contract.Event, p predicate) (bool, error) {
-	switch p.field {
-	case "title":
-		return compareString(e.Title, p.op, p.value)
-	case "calendar", "calendar_name":
-		return compareString(e.CalendarName, p.op, p.value)
-	case "calendar_id":
-		return compareString(e.CalendarID, p.op, p.value)
-	case "location":
-		return compareString(e.Location, p.op, p.value)
-	case "notes":
-		return compareString(e.Notes, p.op, p.value)
-	case "id":
-		return compareString(e.ID, p.op, p.value)
-	case "start":
-		return compareTime(e.Start, p.op, p.value)
-	case "end":
-		return compareTime(e.End, p.op, p.value)
-	default:
-		return false, fmt.Errorf("unsupported field in --where: %s", p.field)
-	}
-}
-
-func compareString(actual, op, expected string) (bool, error) {
-	a := strings.ToLower(actual)
-	e := strings.ToLower(expected)
-	switch op {
-	case "==":
-		return a == e, nil
-	case "!=":
-		return a != e, nil
-	case "~":
-		return strings.Contains(a, e), nil
-	default:
-		return false, fmt.Errorf("operator %s not supported for string fields", op)
-	}
-}
-
-func compareTime(actual time.Time, op, expected string) (bool, error) {
-	parsed, err := time.Parse(time.RFC3339, expected)
-	if err != nil {
-		return false, fmt.Errorf("time predicate expects RFC3339 value, got %q", expected)
-	}
-	switch op {
-	case "==":
-		return actual.Equal(parsed), nil
-	case "!=":
-		return !actual.Equal(parsed), nil
-	case ">":
-		return actual.After(parsed), nil
-	case ">=":
-		return actual.After(parsed) || actual.Equal(parsed), nil
-	case "<":
-		return actual.Before(parsed), nil
-	case "<=":
-		return actual.Before(parsed) || actual.Equal(parsed), nil
-	default:
-		return false, fmt.Errorf("operator %s not supported for time fields", op)
-	}
+	return true
 }
 
 func sortEvents(items []contract.Event, sortField, order string) {
