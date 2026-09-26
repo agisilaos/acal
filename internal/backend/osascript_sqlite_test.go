@@ -13,7 +13,7 @@ import (
 
 func TestListEventsViaSQLiteReadsRows(t *testing.T) {
 	dbPath := buildSQLiteFixture(t, 3)
-	q := buildListEventsQuery(1, 10, EventFilter{})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+10, 0)})
 
 	items, err := listEventsViaSQLite(context.Background(), dbPath, q, 3)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestListEventsViaSQLiteReadsRows(t *testing.T) {
 
 func BenchmarkListEventsViaSQLite(b *testing.B) {
 	dbPath := buildSQLiteFixture(b, 250)
-	q := buildListEventsQuery(1, 1000, EventFilter{})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+1000, 0)})
 	ctx := context.Background()
 
 	b.ResetTimer()

@@ -240,6 +240,18 @@ Equal sort keys retain their fetched order in either direction; tie order can di
 
 ## Notes
 
+Ordinary event lists and identity lookup retain inclusive start-in-range selection.
+`freebusy`, `slots`, and `events conflicts` instead retrieve events overlapping the
+resolved range: an event must start before `--to` and end after `--from`. An event
+ending exactly at the start or starting exactly at the end does not overlap.
+Zero-duration and inverted intervals are excluded before the availability scan
+limit; ordinary listing still includes them.
+Equal non-midnight bounds produce empty availability. Existing date-only and
+midnight end expansion still applies. Busy blocks and conflict overlap endpoints
+and minutes are clipped to that resolved range; event IDs remain unchanged.
+All-day events still count toward scanned events but affect availability only
+with `--include-all-day`. A scan limit can omit busy events and conflicts.
+
 `slots` uses the same resolved range for fetching events and finding gaps. A date-only `--to` includes its final day; explicit midnight ends receive the same expansion as event filters, while non-midnight timestamps clip the range exactly. `--limit` caps events scanned, not slots returned.
 
 - `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
