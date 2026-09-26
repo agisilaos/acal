@@ -22,9 +22,9 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	startUnix := strconv.FormatInt(in.Start.Unix(), 10)
 	endUnix := strconv.FormatInt(in.End.Unix(), 10)
 	repeatText := strings.ToLower(strings.TrimSpace(in.RepeatRule))
-	reminderMins := "__ACAL_KEEP__"
-	if in.ReminderOffset != nil {
-		reminderMins = strconv.Itoa(int(in.ReminderOffset.Minutes()))
+	reminderMins, err := nativeReminderMinutes(in.ReminderOffset)
+	if err != nil {
+		return nil, err
 	}
 	out, err := runAppleScript(ctx, []string{
 		`on run argv`,
@@ -93,7 +93,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	}, nil
 }
 
-func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in EventUpdateInput) ([]string, []string) {
+func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in EventUpdateInput) ([]string, []string, error) {
 	keep := "__ACAL_KEEP__"
 	allDay := keep
 	if in.AllDay != nil {
@@ -131,9 +131,9 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 	if in.RepeatRule != nil {
 		repeatText = strings.ToLower(strings.TrimSpace(*in.RepeatRule))
 	}
-	reminderMins := keep
-	if in.ReminderOffset != nil {
-		reminderMins = strconv.Itoa(int(in.ReminderOffset.Minutes()))
+	reminderMins, err := nativeReminderMinutes(in.ReminderOffset)
+	if err != nil {
+		return nil, nil, err
 	}
 	clearReminder := "false"
 	if in.ClearReminder {
@@ -237,7 +237,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`end tell`,
 		`end run`,
 	}...)
-	return lines, []string{uid, string(scope), occUnix, title, start, end, location, notes, url, allDay, repeatText, reminderMins, clearReminder}
+	return lines, []string{uid, string(scope), occUnix, title, start, end, location, notes, url, allDay, repeatText, reminderMins, clearReminder}, nil
 }
 
 func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventUpdateInput) (*contract.Event, error) {
@@ -250,7 +250,10 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		return nil, err
 	}
 
-	lines, args := buildUpdateEventScript(uid, occ, scope, in)
+	lines, args, err := buildUpdateEventScript(uid, occ, scope, in)
+	if err != nil {
+		return nil, err
+	}
 	out, err := runUpdateAppleScript(ctx, lines, args...)
 	if err != nil {
 		return nil, &UpdateOutcomeError{Err: err}
@@ -361,4 +364,14 @@ func (b *OsaScriptBackend) findByUID(ctx context.Context, uid string, start, end
 		}
 	}
 	return nil, fmt.Errorf("created event not visible in occurrence cache yet")
+}
+
+func nativeReminderMinutes(offset *time.Duration) (string, error) {
+	if offset == nil {
+		return "__ACAL_KEEP__", nil
+	}
+	if *offset%time.Minute != 0 {
+		return "", fmt.Errorf("reminder offset must be a whole number of minutes")
+	}
+	return strconv.FormatInt(int64(*offset/time.Minute), 10), nil
 }

@@ -21,16 +21,20 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			paged, hasMore, err := readHistoryPage(limit, offset)
-			if err != nil {
-				return failWithHint(p, contract.ErrGeneric, err, "Check history file permissions", 1)
-			}
 			if offset < 0 {
 				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--offset must be >= 0"), "Use --offset 0 or greater", 2)
 			}
+			effectiveLimit := limit
+			if effectiveLimit <= 0 {
+				effectiveLimit = 10
+			}
+			paged, hasMore, err := readHistoryPage(effectiveLimit, offset)
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Check history file permissions", 1)
+			}
 			meta := map[string]any{
 				"count":       len(paged),
-				"limit":       limit,
+				"limit":       effectiveLimit,
 				"offset":      offset,
 				"next_offset": offset + len(paged),
 				"has_more":    hasMore,

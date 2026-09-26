@@ -3,11 +3,14 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -304,5 +307,109 @@ func TestHistoryListPagination(t *testing.T) {
 	}
 	if !strings.Contains(got, "\"has_more\": true") || !strings.Contains(got, "\"next_offset\": 2") {
 		t.Fatalf("expected pagination metadata, got: %q", got)
+	}
+}
+
+func TestHistoryListPaginationBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		limit, offset int
+		wantLimit     int
+		wantCount     int
+	}{
+		{"maximum limit", math.MaxInt, 0, math.MaxInt, 1},
+		{"maximum offset", 1, math.MaxInt, 1, 0},
+		{"maximum both", math.MaxInt, math.MaxInt, math.MaxInt, 0},
+		{"overflowing end", math.MaxInt, 1, math.MaxInt, 0},
+		{"huge offset", 10, 1 << 30, 10, 0},
+		{"zero limit", 0, 0, 10, 1},
+		{"negative limit", -1, 0, 10, 1},
+		{"minimum limit", math.MinInt, 0, 10, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			if err := appendHistory(historyEntry{Type: "add", EventID: "e1"}); err != nil {
+				t.Fatal(err)
+			}
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"history", "list", "--json", "--limit", strconv.Itoa(tc.limit), "--offset", strconv.Itoa(tc.offset)})
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				Data []historyEntry `json:"data"`
+				Meta struct {
+					Count      int  `json:"count"`
+					Limit      int  `json:"limit"`
+					Offset     int  `json:"offset"`
+					NextOffset int  `json:"next_offset"`
+					HasMore    bool `json:"has_more"`
+				} `json:"meta"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Data) != tc.wantCount || got.Meta.Count != tc.wantCount || got.Meta.Limit != tc.wantLimit || got.Meta.Offset != tc.offset || got.Meta.NextOffset != tc.offset+tc.wantCount || got.Meta.HasMore {
+				t.Fatalf("unexpected page: %s", out.String())
+			}
+			if tc.wantCount == 1 && got.Data[0].EventID != "e1" {
+				t.Fatalf("unexpected entry: %+v", got.Data[0])
+			}
+		})
+	}
+}
+
+func TestHistoryListNegativeOffset(t *testing.T) {
+	for _, mode := range []string{"--plain", "--json"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			// Invalid storage must not mask the pagination usage error.
+			if err := writeHistoryFile(historyFilePath(), []byte("invalid history\n")); err != nil {
+				t.Fatal(err)
+			}
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{"history", "list", mode, "--offset", "-1"})
+			err := cmd.Execute()
+			if ExitCode(err) != 2 {
+				t.Fatalf("got %v; want exit 2", err)
+			}
+			if mode == "--plain" && (!strings.Contains(out.String(), "--offset must be >= 0") || !strings.Contains(out.String(), "Use --offset 0 or greater")) {
+				t.Fatalf("missing error or hint: %s", out.String())
+			}
+			if mode == "--json" {
+				var got contract.ErrorEnvelope
+				if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.Error.Code != contract.ErrInvalidUsage || got.Error.Message != "--offset must be >= 0" || got.Error.Hint != "Use --offset 0 or greater" {
+					t.Fatalf("unexpected error code: %s", got.Error.Code)
+				}
+			}
+		})
+	}
+}
+
+func TestReadHistoryPageOverflowingEnd(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, id := range []string{"e1", "e2", "e3"} {
+		if err := appendHistory(historyEntry{Type: "add", EventID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, hasMore, err := readHistoryPage(math.MaxInt, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].EventID != "e1" || entries[1].EventID != "e2" || hasMore {
+		t.Fatalf("unexpected page: %+v, hasMore=%v", entries, hasMore)
 	}
 }

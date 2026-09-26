@@ -101,6 +101,7 @@ Recommended automation patterns:
   - Inspect Calendar before retrying an uncertain update, move, reminder, batch row, or undo/redo. These outcomes do not append snapshots or advance history/redo stacks, even though Calendar may have changed. Native update scripts are never automatically retried, including when `ACAL_OSASCRIPT_RETRIES` is configured.
   - Series/future writes return the first native target actually changed as a representative only. This does not verify every occurrence or guarantee full-series undo. Native timestamps are converted independently of the local epoch; ambiguous DST-fold dates produce an unverified outcome. Existing native write targeting, local-epoch date setters, and recurrence limitations remain; this change does not guarantee native date writes across timezones.
   - Automated checks use fixtures/stubs and a Calendar-free AppleScript serialization check. Native Calendar round-trip guarantees require a separately authorized disposable-calendar integration run.
+- Reminder offsets must be exact whole minutes; fractional-minute values (such as `30s` or `90s`) are rejected before Calendar reads or writes. `events remind --at` requires a nonzero duration and treats either sign as before the event. Native writes and history replay preserve signed whole minutes, including zero for an alarm at the event start.
 - Reminder writes are read-back verified:
   - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 
@@ -217,6 +218,16 @@ minus one second.
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+ICS import supports independent events only. VEVENT entries containing `RRULE`,
+`RDATE`, `EXDATE`, or `RECURRENCE-ID` are skipped with warnings rather than
+flattened into one-off appointments. `--strict` rejects a file with any parser
+warnings before creating any events, including otherwise valid entries. Use
+`--dry-run --json` to inspect importable events and warnings.
+
+ICS export writes the occurrences returned for `--from`/`--to` (and `--limit`,
+when set) as separate VEVENT entries. It does not reconstruct recurrence rules
+or exceptions, so exporting and importing is not a recurrence-preserving round trip.
+
 Query execution validates every `--where` clause before listing events, including
 when the result would be empty or an earlier clause would exclude every event.
 Setup and date-range errors retain precedence. Clause syntax is checked first,
@@ -235,14 +246,26 @@ Equal sort keys retain their fetched order in either direction; tie order can di
 
 ## Notes
 
+Ordinary event lists and identity lookup retain inclusive start-in-range selection.
+`freebusy`, `slots`, and `events conflicts` instead retrieve events overlapping the
+resolved range: an event must start before `--to` and end after `--from`. An event
+ending exactly at the start or starting exactly at the end does not overlap.
+Zero-duration and inverted intervals are excluded before the availability scan
+limit; ordinary listing still includes them.
+Equal non-midnight bounds produce empty availability. Existing date-only and
+midnight end expansion still applies. Busy blocks and conflict overlap endpoints
+and minutes are clipped to that resolved range; event IDs remain unchanged.
+All-day events still count toward scanned events but affect availability only
+with `--include-all-day`. A scan limit can omit busy events and conflicts.
+
 `slots` uses the same resolved range for fetching events and finding gaps. A date-only `--to` includes its final day; explicit midnight ends receive the same expansion as event filters, while non-midnight timestamps clip the range exactly. `--limit` caps events scanned, not slots returned.
 
 - `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
-- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
+- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only access and per-path connection reuse to reduce subprocess/open overhead. SQLite detects externally committed changes, including WAL updates; access or query errors fall back to AppleScript, while cancellation and timeout errors are returned.
 - Writes use AppleScript against Calendar.app.
-- Immediately after writes, read cache refresh can lag briefly.
+- Immediately after writes, Calendar's publication of changes to its occurrence cache can lag briefly; SQLite change detection does not force that refresh.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
 - `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
@@ -258,6 +281,7 @@ Equal sort keys retain their fetched order in either direction; tie order can di
     - New `events remind` writes use `type: "reminder"`, a nonblank `event_id`, and required `reminder_before` / `reminder_after` objects instead of ordinary event snapshots. Each object has an optional `offset_ns` (signed integer nanoseconds): null or omitted means known-none; zero is an actual zero-offset alarm. A missing/null snapshot object is invalid, not a clear instruction. Readers reject invalid reminder payloads in parseable JSON rows; syntactically corrupt JSON lines retain the legacy skip behavior.
   - `redo.jsonl`: redo stack populated by `history undo`.
     - JSONL schema: same as `history.jsonl`.
+  - Successful `quick-add` and `events quick-add` writes record one undo entry and clear redo before rendering, in plain (including interactive), JSON, and JSONL output. Dry runs and failed writes leave both stacks unchanged. History append failures do not turn a completed Calendar write into a command failure.
   - `history list`, `history undo`, and `history redo` expose the same entry fields in JSON / JSONL; the JSON envelope remains `schema_version: "v1"`.
   - Reminder undo/redo changes only the display-alarm offset and verifies it by reading it back. `events remind` reads the prior offset before mutation and aborts if that read fails. An update or verification failure creates no new reminder history; failed undo/redo verification leaves the stacks unchanged, although Calendar may already have changed. History write failures retain their existing handling.
   - Reminder snapshots cover only the first display alarm (or none). Set/clear and replay replace all display alarms; additional display alarms cannot be restored. Other alarm types are not captured or changed by these operations.
@@ -281,5 +305,6 @@ Equal sort keys retain their fetched order in either direction; tie order can di
   - `yearly*<count>`
   - Count must be `1..366`.
 - History pagination:
-  - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`).
-  - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`.
+  - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`; zero or negative limits also use `10`).
+  - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`. Negative offsets are usage errors (exit `2`).
+  - Pagination metadata reports the effective limit and offset; offsets beyond the stored history return an empty page.

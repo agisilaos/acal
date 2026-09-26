@@ -119,7 +119,10 @@ func TestUpdateJSONSerializationAppleScript(t *testing.T) {
 }
 
 func TestUpdateScriptCapturesActualTargetAfterWrites(t *testing.T) {
-	lines, _ := buildUpdateEventScript("uid", 792417600, ScopeFuture, EventUpdateInput{})
+	lines, _, err := buildUpdateEventScript("uid", 792417600, ScopeFuture, EventUpdateInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	script := strings.Join(lines, "\n")
 	if strings.Index(script, "set representativeRef to targetRef") < strings.Index(script, "make new display alarm") || strings.Index(script, "set resultFields") < strings.Index(script, `if foundAny is false`) {
 		t.Fatal("snapshot does not follow writes")
@@ -137,7 +140,10 @@ func TestUpdateScriptCompiles(t *testing.T) {
 		t.Skip("AppleScript compiler requires macOS")
 	}
 	title := "Changed"
-	lines, _ := buildUpdateEventScript("uid", 792417600, ScopeFuture, EventUpdateInput{Title: &title})
+	lines, _, err := buildUpdateEventScript("uid", 792417600, ScopeFuture, EventUpdateInput{Title: &title})
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	source := filepath.Join(dir, "update.applescript")
 	if err := os.WriteFile(source, []byte(strings.Join(lines, "\n")), 0600); err != nil {

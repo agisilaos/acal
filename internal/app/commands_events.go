@@ -234,11 +234,12 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
+			f.Overlap = true
 			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			rows, truncated := buildConflictRows(items, conflictsIncludeAllDay, conflictsMax)
+			rows, truncated := buildConflictRows(clipEventsToRange(items, f.From, f.To), conflictsIncludeAllDay, conflictsMax)
 			meta := map[string]any{
 				"count":           len(rows),
 				"events_scanned":  len(items),
@@ -737,7 +738,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if !remindClear {
 				offset, parseErr := normalizeReminderOffset(remindAt)
 				if parseErr != nil {
-					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use duration like -15m, 10m, 1h", 2)
+					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use nonzero whole minutes like -15m, 10m, 1h", 2)
 				}
 				parsedOffset = &offset
 			}
@@ -789,7 +790,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, updated, meta, nil)
 		},
 	}
-	remind.Flags().StringVar(&remindAt, "at", "", "Reminder offset (e.g. -15m, 1h)")
+	remind.Flags().StringVar(&remindAt, "at", "", "Reminder offset in nonzero whole minutes (e.g. -15m, 1h; positive means before)")
 	remind.Flags().BoolVar(&remindClear, "clear", false, "Clear reminder metadata marker")
 	remind.Flags().IntVar(&remindIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	remind.Flags().BoolVarP(&remindDryRun, "dry-run", "n", false, "Preview without writing")
