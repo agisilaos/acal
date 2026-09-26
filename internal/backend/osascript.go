@@ -291,7 +291,7 @@ func openCalendarReadDB(dbPath string) (*sql.DB, error) {
 }
 
 func calendarSQLiteDSN(dbPath string) string {
-	return "file:" + dbPath + "?mode=ro&immutable=1"
+	return "file:" + dbPath + "?mode=ro"
 }
 
 func shouldFallbackFromSQLite(err error) bool {

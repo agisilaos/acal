@@ -234,9 +234,9 @@ Equal sort keys retain their fetched order in either direction; tie order can di
 - `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
-- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
+- SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only access and per-path connection reuse to reduce subprocess/open overhead. SQLite detects externally committed changes, including WAL updates; access or query errors fall back to AppleScript, while cancellation and timeout errors are returned.
 - Writes use AppleScript against Calendar.app.
-- Immediately after writes, read cache refresh can lag briefly.
+- Immediately after writes, Calendar's publication of changes to its occurrence cache can lag briefly; SQLite change detection does not force that refresh.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
 - `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
