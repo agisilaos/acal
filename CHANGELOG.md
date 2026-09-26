@@ -12,6 +12,8 @@ This release focuses on safer Calendar automation, more predictable queries, and
 
 ### Fixed
 
+- Clear and replace display reminders, including undoing back to no reminder, without recreating the event. Preserve other alarm types and verify the saved reminder. ([alarm fix](https://github.com/agisilaos/acal/commit/d35e30e))
+
 - Keep events visible in AppleScript fallback reads when location, notes, or URL fields are empty, and preserve literal quotes and backslashes in returned text. ([fallback reads](https://github.com/agisilaos/acal/commit/3fbe34b))
 - Apply query limits after filtering and sorting, preserve literal predicates containing commas or quotes, and observe external Calendar database commits when reusing connections. ([query limits](https://github.com/agisilaos/acal/pull/7), [literal filters](https://github.com/agisilaos/acal/pull/32), [database freshness](https://github.com/agisilaos/acal/pull/18))
 - Include events that overlap an availability window even when they start earlier; resolve slot boundaries once and bound conflict output with an explicit truncation warning. ([overlap](https://github.com/agisilaos/acal/pull/23), [slots](https://github.com/agisilaos/acal/pull/10), [conflicts](https://github.com/agisilaos/acal/pull/11))
@@ -22,6 +24,8 @@ This release focuses on safer Calendar automation, more predictable queries, and
 
 ### Upgrade notes
 
+- Enable **Full Access** for your terminal/app in System Settings → Privacy & Security → Calendars before changing reminders or replaying reminder history. acal checks access before mutation and does not request permission automatically. ([Calendar access](https://github.com/agisilaos/acal/commit/d35e30e))
+
 - Check scripts that relied on permissive input: invalid effective configuration/timezones, extra positional arguments, unsupported schema versions, unknown batch JSONL fields, nonpositive quick-add durations, and fractional-minute reminders now fail validation. Structured output supports schema `v1` only. ([configuration](https://github.com/agisilaos/acal/pull/33), [timezones](https://github.com/agisilaos/acal/pull/28), [arguments](https://github.com/agisilaos/acal/commit/d88197c), [schema](https://github.com/agisilaos/acal/commit/91fa2c9), [batch](https://github.com/agisilaos/acal/pull/31), [duration](https://github.com/agisilaos/acal/commit/37d91de), [reminders](https://github.com/agisilaos/acal/pull/20))
 - Inspect Calendar before retrying `UPDATE_APPLIED_UNVERIFIED` or `UPDATE_OUTCOME_UNKNOWN`: a write may already have happened. These outcomes do not advance undo/redo stacks. Series results represent one changed event, and repeated local times during a DST fold remain ambiguous. ([update outcomes](https://github.com/agisilaos/acal/pull/24))
 - Keep older binaries away from history files containing the new reminder snapshots if you need reminder recovery: older versions cannot replay them and may discard their fields when rewriting a stack. Existing historical reminder entries cannot be repaired. ([reminder history](https://github.com/agisilaos/acal/pull/15))
@@ -31,7 +35,7 @@ This release focuses on safer Calendar automation, more predictable queries, and
 
 ### Known limitations
 
-- Release qualification on macOS 27.2 found that Calendar rejects deletion of an existing display alarm. Setting a first reminder succeeds, but clearing/replacing one or undoing back to no reminder can fail with an uncertain-outcome error. Inspect Calendar before retrying; this candidate remains blocked pending resolution. AppleScript fallback reads can also require a longer `--timeout` when Calendar has many calendars. ([native alarm operations](https://github.com/agisilaos/acal/commit/ea3ec39))
+- Later generated occurrences of a recurring event can return `event not found` when targeted with `--scope future`; the alarm fix does not resolve Calendar occurrence targeting. AppleScript fallback reads can require a longer `--timeout` when Calendar has many calendars. ([documented limitations](https://github.com/agisilaos/acal/commit/d35e30e), [recurrence follow-up](https://github.com/agisilaos/acal/issues/34))
 
 ## [v0.2.1] - 2026-02-18
 
