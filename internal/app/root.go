@@ -32,6 +32,7 @@ type globalOptions struct {
 	Config         string
 	Backend        string
 	TZ             string
+	Location       *time.Location
 	Timeout        time.Duration
 	SchemaVersion  string
 }
@@ -74,7 +75,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.Profile, "profile", "default", "Config profile")
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "Config file path")
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript|eventkit")
-	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for output")
+	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for dates and output (empty uses system local)")
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
 
@@ -114,6 +115,12 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		SchemaVersion: resolved.SchemaVersion,
 		Out:           cmd.OutOrStdout(),
 		Err:           cmd.ErrOrStderr(),
+	}
+
+	resolved.Location, err = resolveLocation(resolved.TZ)
+	if err != nil {
+		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use a valid IANA timezone such as Europe/Berlin, or an empty value for system local time")
+		return printer, nil, nil, WrapPrinted(2, err)
 	}
 
 	be, err := backendFactory(resolved.Backend)
@@ -380,7 +387,10 @@ func buildEventFilter(fromS, toS string, calendars []string, limit int) (backend
 }
 
 func buildEventFilterWithTZ(fromS, toS string, calendars []string, limit int, tz string) (backend.EventFilter, error) {
-	loc := resolveLocation(tz)
+	loc, err := resolveLocation(tz)
+	if err != nil {
+		return backend.EventFilter{}, err
+	}
 	from, err := timeparse.ParseDateTime(fromS, time.Now(), loc)
 	if err != nil {
 		return backend.EventFilter{}, fmt.Errorf("invalid --from: %w", err)
@@ -398,13 +408,15 @@ func buildEventFilterWithTZ(fromS, toS string, calendars []string, limit int, tz
 	return backend.EventFilter{From: from, To: to, Calendars: calendars, Limit: limit}, nil
 }
 
-func resolveLocation(tz string) *time.Location {
-	if strings.TrimSpace(tz) != "" {
-		if loc, err := time.LoadLocation(tz); err == nil {
-			return loc
-		}
+func resolveLocation(tz string) (*time.Location, error) {
+	if strings.TrimSpace(tz) == "" {
+		return time.Local, nil
 	}
-	return time.Local
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	return loc, nil
 }
 
 func dayBounds(anchor time.Time) (time.Time, time.Time) {

@@ -57,7 +57,7 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check file path or stdin", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			txID := batchTxID()

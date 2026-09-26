@@ -136,6 +136,18 @@ Supported precedence: `flags > env > project config > user config > defaults`
   - `ACAL_FIELDS`
   - `ACAL_NO_INPUT`
 
+Timezone values from `--tz`, `ACAL_TIMEZONE`, or config `tz` are validated after
+precedence is applied. An invalid effective value (for example, `Europe/Berln`)
+returns usage exit code 2 and names the value before any backend access. An
+omitted or empty effective timezone uses the system local timezone; `--tz ''`
+explicitly selects that default over an inherited timezone.
+
+Preview an event in a named timezone without writing to Calendar:
+
+```bash
+acal events add --calendar Work --title Review --start 2026-10-01T09:00 --duration 30m --tz Europe/Berlin --dry-run --json
+```
+
 ## Build
 
 ```bash
