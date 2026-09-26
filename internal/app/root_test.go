@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -438,5 +439,48 @@ func TestAnnotateBackendErrorCanceled(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected wrapped canceled error")
+	}
+}
+
+func TestSchemaVersionValidationBeforeBackend(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	orig := backendFactory
+	t.Cleanup(func() { backendFactory = orig })
+	for _, version := range []string{"v1", "", "v9"} {
+		for _, mode := range []string{"--json", "--jsonl", "--plain"} {
+			calls := 0
+			backendFactory = func(string) (backend.Backend, error) { calls++; return &scopeCaptureBackend{}, nil }
+			cmd := NewRootCommand()
+			var out, errOut bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&errOut)
+			cmd.SetArgs([]string{"queries", "list", "--schema-version=" + version, mode})
+			code := ExitCode(cmd.Execute())
+			if version == "v9" {
+				if code != 2 || calls != 0 || out.Len() != 0 {
+					t.Fatalf("invalid schema executed: exit=%d calls=%d out=%s", code, calls, &out)
+				}
+				if mode != "--plain" {
+					var env struct {
+						Schema string `json:"schema_version"`
+					}
+					if err := json.Unmarshal(errOut.Bytes(), &env); err != nil || env.Schema != "v1" {
+						t.Fatalf("bad error contract: %s", &errOut)
+					}
+				}
+			} else {
+				if code != 0 || calls != 1 {
+					t.Fatalf("supported schema rejected: %s", &errOut)
+				}
+				if mode == "--json" {
+					var env struct {
+						Schema string `json:"schema_version"`
+					}
+					if err := json.Unmarshal(out.Bytes(), &env); err != nil || env.Schema != "v1" {
+						t.Fatalf("bad success contract: %s", &out)
+					}
+				}
+			}
+		}
 	}
 }

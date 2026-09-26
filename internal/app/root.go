@@ -77,7 +77,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript (eventkit is not implemented)")
 	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for dates and output (empty uses system local)")
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
-	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
+	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version (v1 only)")
 
 	root.AddCommand(newSetupCmd(opts))
 	root.AddCommand(newStatusCmd(opts))
@@ -113,9 +113,15 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		Fields:        splitCSV(resolved.Fields),
 		Quiet:         resolved.Quiet,
 		NoColor:       resolved.NoColor,
-		SchemaVersion: resolved.SchemaVersion,
+		SchemaVersion: contract.SchemaVersion,
 		Out:           cmd.OutOrStdout(),
 		Err:           cmd.ErrOrStderr(),
+	}
+
+	if resolved.SchemaVersion != "" && resolved.SchemaVersion != contract.SchemaVersion {
+		err := fmt.Errorf("unsupported schema version %q; supported version: %s", resolved.SchemaVersion, contract.SchemaVersion)
+		_ = printer.Error(contract.ErrInvalidUsage, err.Error(), "Use --schema-version v1 or omit the flag")
+		return printer, nil, nil, WrapPrinted(2, err)
 	}
 
 	resolved.Location, err = resolveLocation(resolved.TZ)

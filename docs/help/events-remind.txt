@@ -22,7 +22,7 @@ Global Flags:
       --plain                   Output stable plain text
       --profile string          Config profile (default "default")
   -q, --quiet                   Reduce success output
-      --schema-version string   Output schema version (default "v1")
+      --schema-version string   Output schema version (v1 only) (default "v1")
       --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
       --tz string               IANA timezone for dates and output (empty uses system local)
   -v, --verbose                 Verbose diagnostics

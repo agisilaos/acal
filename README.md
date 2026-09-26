@@ -102,6 +102,7 @@ Recommended automation patterns:
 
 - Deterministic reads:
   - `acal events query --from today --to +7d --where 'title~standup' --sort start --order asc --json`
+- `--schema-version` supports `v1` only (omitted or empty also selects `v1`). Unsupported values exit `2` before backend access; structured errors still use the actual `v1` schema.
 - Parser errors honor output flags (including explicit `false`), `ACAL_OUTPUT`, and configuration/profile output settings. If configuration cannot be read, error rendering falls back to environment/flags and preserves the original parser error.
 - Unknown subcommands and unexpected positional arguments exit `2` before command execution. Bare command groups still display help.
 - Safe writes preview:
