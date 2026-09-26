@@ -27,7 +27,7 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use day as today, tomorrow, +Nd, or YYYY-MM-DD")
 				return WrapPrinted(2, err)
 			}
-			end := start.Add(24*time.Hour - time.Second)
+			end := start.AddDate(0, 0, 1).Add(-time.Second)
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			items, err := listEventsWithTimeout(ctx, be, backend.EventFilter{From: start, To: end, Calendars: calendars, Limit: limit})

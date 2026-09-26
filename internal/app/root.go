@@ -386,7 +386,7 @@ func buildEventFilterWithTZ(fromS, toS string, calendars []string, limit int, tz
 		return backend.EventFilter{}, fmt.Errorf("--to must not be earlier than --from")
 	}
 	if to.Hour() == 0 && to.Minute() == 0 && to.Second() == 0 {
-		to = to.Add(24*time.Hour - time.Second)
+		to = to.AddDate(0, 0, 1).Add(-time.Second)
 	}
 	return backend.EventFilter{From: from, To: to, Calendars: calendars, Limit: limit}, nil
 }

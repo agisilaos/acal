@@ -160,6 +160,17 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 
 ## Examples
 
+Relative dates (`today`, `tomorrow`, `yesterday`, and `+Nd`/`-Nd`) use local
+calendar days in the selected `--tz` timezone (the system timezone by default).
+They resolve to midnight even across daylight-saving changes. Quick-add all-day
+events end exclusively at the next local midnight, so they can span 23 or 25
+hours. Timed durations such as `2h` always mean elapsed time.
+
+Date-only agenda ranges and event-filter end dates include the day's final
+second, `23:59:59`. An explicit midnight filter end is expanded the same way.
+An agenda `--day` timestamp keeps its time of day and ends one calendar day later,
+minus one second.
+
 ```bash
 ./acal doctor --json
 ./acal setup --json
