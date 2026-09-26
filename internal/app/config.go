@@ -31,54 +31,9 @@ func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalO
 		resolved.OutputMode = output.ModeAuto
 	}
 
-	profile := firstNonEmpty(env("ACAL_PROFILE"), defaults.Profile)
-	if flagValueChanged(cmd, "profile") {
-		profile = defaults.Profile
-	}
-	if profile == "" {
-		profile = "default"
-	}
-	resolved.Profile = profile
-
-	userPath := defaultUserConfigPath()
-	projectPath := ".acal.toml"
-	configPath := firstNonEmpty(env("ACAL_CONFIG"), userPath)
-	if flagValueChanged(cmd, "config") {
-		configPath = defaults.Config
-	}
-
-	explicitConfig := flagValueChanged(cmd, "config") || env("ACAL_CONFIG") != ""
-	if explicitConfig && strings.TrimSpace(configPath) == "" {
-		return nil, errors.New("--config requires a non-empty file path")
-	}
-	paths := []string{userPath, projectPath}
-	if configPath != "" && configPath != userPath && configPath != projectPath {
-		paths = append(paths, configPath)
-	}
-	var cfg fileConfig
-	sources := map[string]string{}
-	for _, path := range paths {
-		layer, err := readConfigFile(path, explicitConfig && path == configPath)
-		if err != nil {
-			return nil, err
-		}
-		source := fmt.Sprintf("config %q", path)
-		if layer.Timeout != "" {
-			sources["timeout"] = source + ": timeout"
-		}
-		if layer.Output != "" {
-			sources["output"] = source + ": output"
-		}
-		if overlay, ok := layer.Profiles[profile]; ok {
-			if overlay.Timeout != "" {
-				sources["timeout"] = source + ": profiles." + profile + ".timeout"
-			}
-			if overlay.Output != "" {
-				sources["output"] = source + ": profiles." + profile + ".output"
-			}
-			layer = mergeFileConfig(layer, overlay)
-		}
-		cfg = mergeFileConfig(cfg, layer)
+	cfg, sources, err := loadGlobalConfig(cmd, &resolved)
+	if err != nil {
+		return nil, err
 	}
 	if value := env("ACAL_TIMEOUT"); value != "" {
 		cfg.Timeout, sources["timeout"] = value, "ACAL_TIMEOUT"
@@ -112,10 +67,65 @@ func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalO
 	}
 	resolved.OutputMode = mode
 
-	if resolved.Config == "" {
-		resolved.Config = configPath
-	}
 	return &resolved, nil
+}
+
+// Load configuration layers without validating unrelated runtime options.
+// Error rendering uses the same precedence even when normal parsing fails.
+func loadGlobalConfig(cmd *cobra.Command, defaults *globalOptions) (fileConfig, map[string]string, error) {
+	profile := firstNonEmpty(env("ACAL_PROFILE"), defaults.Profile)
+	if flagValueChanged(cmd, "profile") {
+		profile = defaults.Profile
+	}
+	if profile == "" {
+		profile = "default"
+	}
+	defaults.Profile = profile
+
+	userPath := defaultUserConfigPath()
+	projectPath := ".acal.toml"
+	configPath := firstNonEmpty(env("ACAL_CONFIG"), userPath)
+	if flagValueChanged(cmd, "config") {
+		configPath = defaults.Config
+	}
+
+	explicitConfig := flagValueChanged(cmd, "config") || env("ACAL_CONFIG") != ""
+	if explicitConfig && strings.TrimSpace(configPath) == "" {
+		return fileConfig{}, nil, errors.New("--config requires a non-empty file path")
+	}
+	paths := []string{userPath, projectPath}
+	if configPath != "" && configPath != userPath && configPath != projectPath {
+		paths = append(paths, configPath)
+	}
+	var cfg fileConfig
+	sources := map[string]string{}
+	for _, path := range paths {
+		layer, err := readConfigFile(path, explicitConfig && path == configPath)
+		if err != nil {
+			return fileConfig{}, nil, err
+		}
+		source := fmt.Sprintf("config %q", path)
+		if layer.Timeout != "" {
+			sources["timeout"] = source + ": timeout"
+		}
+		if layer.Output != "" {
+			sources["output"] = source + ": output"
+		}
+		if overlay, ok := layer.Profiles[profile]; ok {
+			if overlay.Timeout != "" {
+				sources["timeout"] = source + ": profiles." + profile + ".timeout"
+			}
+			if overlay.Output != "" {
+				sources["output"] = source + ": profiles." + profile + ".output"
+			}
+			layer = mergeFileConfig(layer, overlay)
+		}
+		cfg = mergeFileConfig(cfg, layer)
+	}
+	if defaults.Config == "" {
+		defaults.Config = configPath
+	}
+	return cfg, sources, nil
 }
 
 func applyFileConfig(dst *globalOptions, cfg fileConfig) {

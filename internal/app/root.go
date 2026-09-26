@@ -331,30 +331,82 @@ func renderTopLevelError(cmd *cobra.Command, err error) {
 	if errors.As(err, &appErr) && appErr.Printed {
 		return
 	}
-	if wantsStructuredErrorOutput(os.Args[1:]) {
-		printer := output.Printer{
-			Mode:          output.ModeJSON,
-			SchemaVersion: contract.SchemaVersion,
-			Err:           cmd.ErrOrStderr(),
-		}
-		_ = printer.Error(errorCodeForExit(ExitCode(err)), err.Error(), "")
-		return
-	}
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %s\n", err.Error())
+	printer := output.Printer{Mode: errorOutputMode(cmd, os.Args[1:]), SchemaVersion: contract.SchemaVersion, Err: cmd.ErrOrStderr()}
+	_ = printer.Error(errorCodeForExit(ExitCode(err)), err.Error(), "")
 }
 
-func wantsStructuredErrorOutput(args []string) bool {
-	for _, arg := range args {
-		switch {
-		case arg == "--":
-			return false
-		case arg == "--json", arg == "--jsonl":
-			return true
-		case strings.HasPrefix(arg, "--json="), strings.HasPrefix(arg, "--jsonl="):
-			return true
+// Recover only rendering preferences from malformed argv. Known flag values
+// are consumed so a literal value such as --notes --json is not a mode flag.
+func errorOutputMode(root *cobra.Command, args []string) output.Mode {
+	preferences := &cobra.Command{}
+	preferences.Flags().Bool("json", false, "")
+	preferences.Flags().Bool("jsonl", false, "")
+	preferences.Flags().Bool("plain", false, "")
+	defaults := &globalOptions{Profile: "default"}
+	preferences.Flags().StringVar(&defaults.Config, "config", "", "")
+	preferences.Flags().StringVar(&defaults.Profile, "profile", "default", "")
+	selected, _, _ := root.Find(args)
+	if selected == nil {
+		selected = root
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if !strings.HasPrefix(arg, "--") {
+			continue
+		}
+		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		flag := selected.Flag(name)
+		if flag == nil {
+			flag = root.PersistentFlags().Lookup(name)
+		}
+		if flag == nil {
+			continue
+		}
+		if !hasValue {
+			value = flag.NoOptDefVal
+			if value == "" {
+				if i+1 == len(args) {
+					continue
+				}
+				i++
+				value = args[i]
+			}
+		}
+		if preferences.Flags().Lookup(name) != nil {
+			_ = preferences.Flags().Set(name, value)
 		}
 	}
-	return false
+	inherited := output.ModeAuto
+	cfg, _, err := loadGlobalConfig(preferences, defaults)
+	if err == nil {
+		inherited = output.Mode(strings.ToLower(cfg.Output))
+	}
+	if value := env("ACAL_OUTPUT"); value != "" {
+		inherited = output.Mode(strings.ToLower(value))
+	}
+	switch inherited {
+	case output.ModeJSON, output.ModeJSONL, output.ModePlain:
+	default:
+		inherited = output.ModeAuto
+	}
+	mode, err := resolveOutputMode(preferences, inherited)
+	if err != nil {
+		// Conflicting modes have no valid resolution; retain a structured diagnostic
+		// when one was explicitly enabled, without replacing the original error.
+		for _, name := range []string{"json", "jsonl"} {
+			if enabled, _ := preferences.Flags().GetBool(name); enabled {
+				return output.ModeJSON
+			}
+		}
+		return output.ModePlain
+	}
+	if mode == output.ModeAuto {
+		return output.ModePlain
+	}
+	return mode
 }
 
 func errorCodeForExit(code int) contract.ErrorCode {
