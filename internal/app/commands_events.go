@@ -321,7 +321,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1, "repeat": addRepeat}, nil)
 		},
 	}
-	add.Flags().StringVar(&addCalendar, "calendar", "", "Calendar ID or name")
+	add.Flags().StringVar(&addCalendar, "calendar", "", "Calendar name")
 	add.Flags().StringVar(&addTitle, "title", "", "Event title")
 	add.Flags().StringVar(&addStart, "start", "", "Start datetime")
 	add.Flags().StringVar(&addEnd, "end", "", "End datetime")

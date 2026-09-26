@@ -35,6 +35,15 @@ make release VERSION=vX.Y.Z
 
 The final command creates and pushes the tag, publishes the GitHub Release with the approved changelog section, and updates the configured Homebrew tap.
 
+Before publishing, verify that Git `origin`, the repository selected by `gh`,
+and any `GITHUB_REPO` override identify the intended release repository. Tag
+pushes use `origin`, `gh release create` uses its repository context, and generated
+download URLs use `GITHUB_REPO` or the repository derived from `origin`. The
+Homebrew tap has its own `HOMEBREW_TAP_URL` / `HOMEBREW_TAP_REPO` and branch settings.
+Human review is a workflow requirement; the script does not record approval or
+bind a dry run to a later publish. Keep the reviewed source, notes, and target
+configuration unchanged between those steps.
+
 ## Changelog policy
 
 - Keep concrete release headings in the form `## [vX.Y.Z] - YYYY-MM-DD`.

@@ -4,6 +4,7 @@
 
 - CLI usage and command reference: `../README.md`
 - Release history: `../CHANGELOG.md`
+- Module ownership, data flow, persistence, and security boundaries: [Architecture](architecture.md)
 
 ## Planning
 
@@ -11,4 +12,5 @@
 
 ## Release
 
+- Changelog review, validation, and publication: [Releasing](../RELEASING.md)
 - Unified release workflow commands and scripts: `../README.md#release`

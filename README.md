@@ -445,9 +445,9 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
 - Optional transient AppleScript retry controls (off by default):
   - `ACAL_OSASCRIPT_RETRIES` (integer retries; default `0`)
   - `ACAL_OSASCRIPT_RETRY_BACKOFF` (duration; default `200ms`)
-- Persistence files (under config dir, usually `~/.config/acal/`):
+- Persistence files live in `$XDG_CONFIG_HOME/acal/`, or `$HOME/.config/acal/` when `XDG_CONFIG_HOME` is unset. `--config` and `ACAL_CONFIG` select an additional configuration layer; they do not relocate history, redo, or saved queries:
   - `config.toml`: runtime defaults/profiles.
-  - `history.jsonl`: append-only write history for undo.
+  - `history.jsonl`: mutable undo stack. Writes append entries; undo removes entries by rewriting the stack. It is not an append-only audit log.
     - JSONL fields: `{"at","type","tx_id","op_id","event_id","prev","next","created","deleted","reminder_before","reminder_after"}`; operation-specific fields are omitted when unused.
     - New `events remind` writes use `type: "reminder"`, a nonblank `event_id`, and required `reminder_before` / `reminder_after` objects instead of ordinary event snapshots. Each object has an optional `offset_ns` (signed integer nanoseconds): null or omitted means known-none; zero is an actual zero-offset alarm. A missing/null snapshot object is invalid, not a clear instruction. Readers reject invalid reminder payloads in parseable JSON rows; syntactically corrupt JSON lines retain the legacy skip behavior.
   - `redo.jsonl`: redo stack populated by `history undo`.
@@ -492,8 +492,11 @@ acal events list --calendar Work --calendar '"Holiday, Family"' --json
 ```
 
 `--calendar 'Holiday, Family'` instead selects two names (`Holiday` and ` Family`).
-Single-calendar write flags such as add/import/quick-add take a literal value;
-use `--calendar 'Holiday, Family'` there, without embedded CSV quotes.
+Single-calendar creation flags such as add/import/quick-add take a literal calendar
+name, not an ID; use `--calendar 'Holiday, Family'` there, without embedded CSV
+quotes. Copy destinations and the batch add `calendar` field also use names.
+The native backend selects the first calendar matching that name, so duplicate
+calendar names are ambiguous for creation.
 
 ### ICS import date support
 
