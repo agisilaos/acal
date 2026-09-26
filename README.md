@@ -98,7 +98,8 @@ Exit codes:
 - `7`: concurrency conflict (sequence mismatch)
 
 Notes:
-- `doctor` and `status` share readiness semantics. Degraded environments can still be `ready=true` when core automation checks pass.
+- `doctor`, `status`, `status explain`, and `setup` exit `0` when `ready=true` and `6` when required checks fail or are missing, in both plain and JSON output. Degraded environments can still be `ready=true` when core automation checks pass, even if the backend reports an error.
+- After checks run, each health command prints one health report to stdout. When not ready, it also prints one stderr diagnostic unless a backend error was reported by `doctor` or `status explain`; those commands keep stderr empty in that case. Not-ready `status` and `setup` results with a backend error include remediation guidance in their stderr diagnostic.
 - `status` and `doctor` include `degraded_reason_codes` for machine-actionable remediation.
 - `status explain` prints a concise health explanation and remediation steps.
 
