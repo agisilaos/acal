@@ -292,13 +292,11 @@ func TestLegacyHistoryFixtures(t *testing.T) {
 	for _, operation := range []string{"undo", "redo"} {
 		t.Run(operation, func(t *testing.T) {
 			setupReminderHistory(t)
-			name := "history_legacy.jsonl"
 			path := historyFilePath()
 			if operation == "redo" {
-				name = "redo_legacy.jsonl"
 				path = redoFilePath()
 			}
-			raw, err := os.ReadFile(filepath.Join("testdata", name))
+			raw, err := os.ReadFile(filepath.Join("testdata", "history_legacy.jsonl"))
 			if err != nil {
 				t.Fatal(err)
 			}

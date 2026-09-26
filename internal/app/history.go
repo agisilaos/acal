@@ -46,17 +46,10 @@ func decodeHistoryEntry(line string) (*historyEntry, error) {
 		}
 		return nil, nil
 	}
-	if err := entry.validateReminder(); err != nil {
-		return nil, err
+	if entry.Type == "reminder" && (strings.TrimSpace(entry.EventID) == "" || entry.ReminderBefore == nil || entry.ReminderAfter == nil) {
+		return nil, fmt.Errorf("invalid reminder history entry: event id and both reminder snapshots are required")
 	}
 	return &entry, nil
-}
-
-func (entry historyEntry) validateReminder() error {
-	if entry.Type == "reminder" && (strings.TrimSpace(entry.EventID) == "" || entry.ReminderBefore == nil || entry.ReminderAfter == nil) {
-		return fmt.Errorf("invalid reminder history entry: event id and both reminder snapshots are required")
-	}
-	return nil
 }
 
 func replayReminder(ctx context.Context, be backend.Backend, id string, snapshot *reminderSnapshot) error {
