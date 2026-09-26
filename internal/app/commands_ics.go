@@ -85,7 +85,7 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check --file path or stdin data", 2)
 			}
-			items, warnings := parseICS(raw, calendar, resolveLocation(ro.TZ))
+			items, warnings := parseICS(raw, calendar, ro.Location)
 			if len(items) == 0 {
 				hint := "Validate ICS content and DTSTART/DTEND fields"
 				if len(warnings) > 0 {

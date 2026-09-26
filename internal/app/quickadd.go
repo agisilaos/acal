@@ -40,7 +40,7 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			defaultDuration := 60 * time.Minute
 			if strings.TrimSpace(duration) != "" {
 				parsed, err := time.ParseDuration(duration)

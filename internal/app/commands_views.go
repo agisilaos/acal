@@ -21,7 +21,7 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			start, err := timeparse.ParseDateTime(day, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use day as today, tomorrow, +Nd, or YYYY-MM-DD")
@@ -57,7 +57,7 @@ func newTodayCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			anchor, err := timeparse.ParseDateTime(day, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --day as today, tomorrow, +Nd, or YYYY-MM-DD")
@@ -99,7 +99,7 @@ func newWeekCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			anchor, err := timeparse.ParseDateTime(of, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --of as today, tomorrow, +Nd, or YYYY-MM-DD")
@@ -146,7 +146,7 @@ func newMonthCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			anchor, err := parseMonthOrDate(month, time.Now(), loc)
 			if err != nil {
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), "Use --month as YYYY-MM, YYYY-MM-DD, or relative day syntax")

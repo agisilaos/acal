@@ -282,7 +282,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("--calendar, --title, and --start are required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Provide required fields", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			startT, err := timeparse.ParseDateTime(addStart, time.Now(), loc)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --start format", 2)
@@ -351,7 +351,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			patch := backend.EventUpdateInput{Scope: scope}
 			if cmd.Flags().Changed("title") {
 				patch.Title = &upTitle
@@ -499,7 +499,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("use exactly one of --to or --by")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> or --by <duration>", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			var by time.Duration
 			start := time.Time{}
 			if mvTo != "" {
@@ -585,7 +585,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("--to is required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> for the copied event start", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			start, err := timeparse.ParseDateTime(cpTo, time.Now(), loc)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
