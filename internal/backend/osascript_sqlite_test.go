@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestListEventsViaSQLiteReadsRows(t *testing.T) {
@@ -56,6 +59,92 @@ func TestOpenCalendarReadDBCachesByPath(t *testing.T) {
 	}
 	if db1 != db2 {
 		t.Fatalf("expected cached database handle reuse")
+	}
+}
+
+func TestListEventsViaSQLiteSeesExternalCommits(t *testing.T) {
+	for _, mode := range []string{"DELETE", "WAL"} {
+		t.Run(mode, func(t *testing.T) {
+			marker := stubLookupAppleScript(t, "unexpected fallback", true)
+			dbPath := buildSQLiteFixture(t, 1)
+			writer, err := sql.Open("sqlite", "file:"+dbPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			writer.SetMaxOpenConns(1)
+			var journalMode string
+			if err := writer.QueryRow("PRAGMA journal_mode=" + mode).Scan(&journalMode); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.EqualFold(journalMode, mode) {
+				t.Fatalf("journal mode: got %q, want %q", journalMode, mode)
+			}
+			if _, err := writer.Exec("PRAGMA wal_autocheckpoint=0"); err != nil {
+				t.Fatal(err)
+			}
+			reader, err := openCalendarReadDB(dbPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				calendarReadDBCache.Delete(calendarSQLiteDSN(dbPath))
+				reader.Close()
+			})
+			b := NewOsaScriptBackend()
+			filter := EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+10, 0)}
+			for _, title := range []string{"event-1", "updated", "updated again"} {
+				if title != "event-1" {
+					// Each Exec commits independently while the cached reader stays open.
+					if _, err := writer.Exec("UPDATE CalendarItem SET summary = ? WHERE ROWID = 1", title); err != nil {
+						t.Fatal(err)
+					}
+					if mode == "WAL" {
+						info, err := os.Stat(dbPath + "-wal")
+						if err != nil || info.Size() <= 32 {
+							t.Fatalf("expected uncheckpointed WAL frames: info=%v, error=%v", info, err)
+						}
+					}
+				}
+				items, err := b.listEventsFromDB(context.Background(), dbPath, filter)
+				if err != nil || len(items) != 1 || items[0].Title != title {
+					t.Fatalf("reread: got %v, error=%v; want title %q", items, err, title)
+				}
+				cached, err := openCalendarReadDB(dbPath)
+				if err != nil || cached != reader {
+					t.Fatalf("reader was not reused: %v", err)
+				}
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatalf("unexpected AppleScript invocation: %v", err)
+			}
+			if _, err := reader.Exec("UPDATE CalendarItem SET summary = 'forbidden'"); err == nil {
+				t.Fatal("read-only handle accepted a write")
+			}
+		})
+	}
+}
+
+func TestListEventsFromDBFallsBackOnDeniedSQLiteAccess(t *testing.T) {
+	dbPath := buildSQLiteFixture(t, 1)
+	if err := os.Chmod(dbPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dbPath, 0600) })
+	if file, err := os.Open(dbPath); err == nil {
+		file.Close()
+		t.Skip("current user can read files without permission bits")
+	}
+	marker := stubLookupAppleScript(t, "uid-1\tcal-1\tWork\tfallback\t978307201\t978307202\tfalse\troom\tnotes\turl\n", false)
+	b := NewOsaScriptBackend()
+	items, err := b.listEventsFromDB(context.Background(), dbPath, EventFilter{
+		From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+10, 0),
+	})
+	if err != nil || len(items) != 1 || items[0].Title != "fallback" {
+		t.Fatalf("access-denied fallback: items=%v, error=%v", items, err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("AppleScript stub was not called: %v", err)
 	}
 }
 

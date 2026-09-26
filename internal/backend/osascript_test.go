@@ -197,13 +197,13 @@ func TestInitialEventCapacity(t *testing.T) {
 	}
 }
 
-func TestCalendarSQLiteDSNUsesReadOnlyImmutableMode(t *testing.T) {
+func TestCalendarSQLiteDSNUsesReadOnlyMode(t *testing.T) {
 	dsn := calendarSQLiteDSN("/tmp/Calendar.sqlitedb")
 	if !strings.Contains(dsn, "mode=ro") {
 		t.Fatalf("expected read-only mode in dsn, got: %s", dsn)
 	}
-	if !strings.Contains(dsn, "immutable=1") {
-		t.Fatalf("expected immutable mode in dsn, got: %s", dsn)
+	if strings.Contains(dsn, "immutable") {
+		t.Fatalf("mutable Calendar database must not use immutable mode: %s", dsn)
 	}
 }
 
