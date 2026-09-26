@@ -33,6 +33,19 @@ func runAppleScript(ctx context.Context, lines []string, args ...string) (string
 	}
 	cmdArgs = append(cmdArgs, args...)
 	retries, backoff := osascriptRetryPolicy()
+	return runAppleScriptCommand(ctx, cmdArgs, retries, backoff)
+}
+
+// Updates must never retry a script that may already have changed Calendar.
+func runUpdateAppleScript(ctx context.Context, lines []string, args ...string) (string, error) {
+	cmdArgs := []string{"-s", "h"}
+	for _, line := range lines {
+		cmdArgs = append(cmdArgs, "-e", line)
+	}
+	return runAppleScriptCommand(ctx, append(cmdArgs, args...), 0, 0)
+}
+
+func runAppleScriptCommand(ctx context.Context, cmdArgs []string, retries int, backoff time.Duration) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt <= retries; attempt++ {
 		cmd := exec.CommandContext(ctx, "osascript", cmdArgs...)
