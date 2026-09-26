@@ -1,0 +1,3 @@
+{"type":"add","event_id":"legacy","created":{"id":"legacy","calendar_name":"Work","title":"Original","start":"2026-02-20T09:00:00Z","end":"2026-02-20T10:00:00Z"}}
+{"type":"delete","event_id":"legacy","deleted":{"id":"legacy","calendar_name":"Work","title":"Original","start":"2026-02-20T09:00:00Z","end":"2026-02-20T10:00:00Z"}}
+{"type":"update","event_id":"legacy","prev":{"id":"legacy","calendar_name":"Work","title":"Original","start":"2026-02-20T09:00:00Z","end":"2026-02-20T10:00:00Z"},"next":{"id":"legacy","calendar_name":"Work","title":"Updated","start":"2026-02-20T09:00:00Z","end":"2026-02-20T10:00:00Z"}}
