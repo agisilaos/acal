@@ -149,6 +149,38 @@ Supported precedence: `flags > env > project config > user config > defaults`
   - `ACAL_FIELDS`
   - `ACAL_NO_INPUT`
 
+Missing optional user/project files are allowed. A file selected explicitly with
+`--config PATH` or `ACAL_CONFIG` must exist. Existing files that cannot be read or
+parsed as TOML cause a usage error (exit 2), even if flags override their settings.
+`--config` takes precedence over `ACAL_CONFIG`. An additional config file overlays
+the project config, below environment variables and flags; selecting the user or
+project path already loaded does not change that layer's position.
+
+Invalid effective `timeout` and `output` values, or environment booleans
+(`ACAL_FAIL_ON_DEGRADED`, `ACAL_NO_INPUT`), report their source and accepted format.
+Higher-priority values can override invalid lower-priority values after TOML
+parsing. An enabled `--json`, `--jsonl`, or `--plain` overrides `ACAL_OUTPUT`;
+a false output flag alone does not make an invalid output setting valid.
+Empty settings retain their existing unset behavior. Unknown TOML keys are
+ignored. The selected profile overlays each file's base settings; an absent
+profile uses those base settings, and unselected profiles are not value-validated.
+
+These read-only examples list saved queries without accessing Calendar:
+
+```bash
+acal queries list --config ./runtime.toml --json
+ACAL_OUTPUT=json acal queries list
+ACAL_OUTPUT=jsno acal queries list # exits 2 and names ACAL_OUTPUT
+ACAL_OUTPUT=jsno acal queries list --json # flag overrides the invalid value
+```
+
+For the config example, create `runtime.toml` containing:
+
+```toml
+timeout = "15s"
+output = "plain"
+```
+
 ## Build
 
 ```bash

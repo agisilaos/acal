@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -46,19 +47,64 @@ func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalO
 		configPath = defaults.Config
 	}
 
-	if cfg, ok := readConfigFile(userPath); ok {
-		applyFileConfig(&resolved, cfg, profile)
+	explicitConfig := flagValueChanged(cmd, "config") || env("ACAL_CONFIG") != ""
+	if explicitConfig && strings.TrimSpace(configPath) == "" {
+		return nil, errors.New("--config requires a non-empty file path")
 	}
-	if cfg, ok := readConfigFile(projectPath); ok {
-		applyFileConfig(&resolved, cfg, profile)
-	}
+	paths := []string{userPath, projectPath}
 	if configPath != "" && configPath != userPath && configPath != projectPath {
-		if cfg, ok := readConfigFile(configPath); ok {
-			applyFileConfig(&resolved, cfg, profile)
+		paths = append(paths, configPath)
+	}
+	var cfg fileConfig
+	sources := map[string]string{}
+	for _, path := range paths {
+		layer, err := readConfigFile(path, explicitConfig && path == configPath)
+		if err != nil {
+			return nil, err
+		}
+		source := fmt.Sprintf("config %q", path)
+		if layer.Timeout != "" {
+			sources["timeout"] = source + ": timeout"
+		}
+		if layer.Output != "" {
+			sources["output"] = source + ": output"
+		}
+		if overlay, ok := layer.Profiles[profile]; ok {
+			if overlay.Timeout != "" {
+				sources["timeout"] = source + ": profiles." + profile + ".timeout"
+			}
+			if overlay.Output != "" {
+				sources["output"] = source + ": profiles." + profile + ".output"
+			}
+			layer = mergeFileConfig(layer, overlay)
+		}
+		cfg = mergeFileConfig(cfg, layer)
+	}
+	if value := env("ACAL_TIMEOUT"); value != "" {
+		cfg.Timeout, sources["timeout"] = value, "ACAL_TIMEOUT"
+	}
+	if value := env("ACAL_OUTPUT"); value != "" {
+		cfg.Output, sources["output"] = value, "ACAL_OUTPUT"
+	}
+	if cfg.Timeout != "" && !flagValueChanged(cmd, "timeout") {
+		duration, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid duration %q (use e.g. 15s, 1m, or 0): %w", sources["timeout"], cfg.Timeout, err)
+		}
+		resolved.Timeout = duration
+	}
+	if cfg.Output != "" && !hasEnabledOutputFlag(cmd) {
+		switch mode := output.Mode(strings.ToLower(cfg.Output)); mode {
+		case output.ModeJSON, output.ModeJSONL, output.ModePlain:
+			resolved.OutputMode = mode
+		default:
+			return nil, fmt.Errorf("%s: invalid output %q (use json, jsonl, or plain)", sources["output"], cfg.Output)
 		}
 	}
-
-	applyEnv(&resolved)
+	applyFileConfig(&resolved, cfg)
+	if err := applyEnv(cmd, &resolved); err != nil {
+		return nil, err
+	}
 	applyFlags(cmd, &resolved, defaults)
 	mode, err := resolveOutputMode(cmd, resolved.OutputMode)
 	if err != nil {
@@ -72,20 +118,12 @@ func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalO
 	return &resolved, nil
 }
 
-func applyFileConfig(dst *globalOptions, cfg fileConfig, profile string) {
-	if p, ok := cfg.Profiles[profile]; ok {
-		cfg = mergeFileConfig(cfg, p)
-	}
+func applyFileConfig(dst *globalOptions, cfg fileConfig) {
 	if cfg.Backend != "" {
 		dst.Backend = cfg.Backend
 	}
 	if cfg.TZ != "" {
 		dst.TZ = cfg.TZ
-	}
-	if cfg.Timeout != "" {
-		if d, err := time.ParseDuration(cfg.Timeout); err == nil {
-			dst.Timeout = d
-		}
 	}
 	if cfg.FailOnDegraded != nil {
 		dst.FailOnDegraded = *cfg.FailOnDegraded
@@ -93,7 +131,6 @@ func applyFileConfig(dst *globalOptions, cfg fileConfig, profile string) {
 	if cfg.Fields != "" {
 		dst.Fields = cfg.Fields
 	}
-	applyOutputMode(dst, cfg.Output)
 }
 
 func mergeFileConfig(base, overlay fileConfig) fileConfig {
@@ -121,35 +158,35 @@ func mergeFileConfig(base, overlay fileConfig) fileConfig {
 	return base
 }
 
-func applyEnv(dst *globalOptions) {
+func applyEnv(cmd *cobra.Command, dst *globalOptions) error {
 	if v := env("ACAL_BACKEND"); v != "" {
 		dst.Backend = v
 	}
 	if v := env("ACAL_TIMEZONE"); v != "" {
 		dst.TZ = v
 	}
-	if v := env("ACAL_TIMEOUT"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			dst.Timeout = d
-		}
-	}
-	if v := env("ACAL_FAIL_ON_DEGRADED"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			dst.FailOnDegraded = b
-		}
-	}
 	if v := env("ACAL_FIELDS"); v != "" {
 		dst.Fields = v
 	}
-	applyOutputMode(dst, env("ACAL_OUTPUT"))
-	if v := env("ACAL_NO_INPUT"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			dst.NoInput = b
+	for _, setting := range []struct {
+		name, flag string
+		dst        *bool
+	}{
+		{"ACAL_FAIL_ON_DEGRADED", "fail-on-degraded", &dst.FailOnDegraded},
+		{"ACAL_NO_INPUT", "no-input", &dst.NoInput},
+	} {
+		if value := env(setting.name); value != "" && !flagValueChanged(cmd, setting.flag) {
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("%s: invalid boolean %q (use true or false)", setting.name, value)
+			}
+			*setting.dst = parsed
 		}
 	}
 	if strings.TrimSpace(os.Getenv("NO_COLOR")) != "" || strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
 		dst.NoColor = true
 	}
+	return nil
 }
 
 func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
@@ -167,12 +204,13 @@ func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
 	copyIfChanged(cmd, "schema-version", func() { dst.SchemaVersion = fromFlags.SchemaVersion })
 }
 
-func applyOutputMode(dst *globalOptions, value string) {
-	mode := output.Mode(strings.ToLower(value))
-	switch mode {
-	case output.ModeJSON, output.ModeJSONL, output.ModePlain:
-		dst.OutputMode = mode
+func hasEnabledOutputFlag(cmd *cobra.Command) bool {
+	for _, name := range []string{"json", "jsonl", "plain"} {
+		if flag := cmd.Flag(name); flag != nil && flag.Changed && flag.Value.String() == "true" {
+			return true
+		}
 	}
+	return false
 }
 
 func resolveOutputMode(cmd *cobra.Command, inherited output.Mode) (output.Mode, error) {
@@ -218,19 +256,22 @@ func flagValueChanged(cmd *cobra.Command, name string) bool {
 	return false
 }
 
-func readConfigFile(path string) (fileConfig, bool) {
+func readConfigFile(path string, required bool) (fileConfig, error) {
 	if strings.TrimSpace(path) == "" {
-		return fileConfig{}, false
+		return fileConfig{}, nil
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fileConfig{}, false
+		if !required && errors.Is(err, os.ErrNotExist) {
+			return fileConfig{}, nil
+		}
+		return fileConfig{}, fmt.Errorf("read config %q: %w", path, err)
 	}
 	var cfg fileConfig
 	if err := toml.Unmarshal(raw, &cfg); err != nil {
-		return fileConfig{}, false
+		return fileConfig{}, fmt.Errorf("parse config %q: %w", path, err)
 	}
-	return cfg, true
+	return cfg, nil
 }
 
 func defaultUserConfigPath() string {
