@@ -236,26 +236,47 @@ func TestSelectBackend(t *testing.T) {
 }
 
 func TestBuildContextMutuallyExclusiveOutputFlags(t *testing.T) {
-	cmd := newTestCmd()
-	if err := cmd.ParseFlags([]string{"--json", "--plain"}); err != nil {
-		t.Fatalf("parse flags failed: %v", err)
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("ACAL_CONFIG", "")
+	previousFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) {
+		t.Fatal("backend must not be created for conflicting output flags")
+		return nil, nil
 	}
-	opts := &globalOptions{
-		JSON:          true,
-		Plain:         true,
-		Backend:       "osascript",
-		Profile:       "default",
-		SchemaVersion: "v1",
-	}
-	_, be, _, err := buildContext(cmd, opts, "events.list")
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if be != nil {
-		t.Fatalf("expected nil backend on error")
-	}
-	if code := ExitCode(err); code != 2 {
-		t.Fatalf("exit code mismatch: got=%d want=2", code)
+	t.Cleanup(func() { backendFactory = previousFactory })
+
+	for _, inherited := range []string{"", "json", "jsonl", "plain"} {
+		t.Run("inherited="+inherited, func(t *testing.T) {
+			t.Setenv("ACAL_OUTPUT", inherited)
+			for _, args := range [][]string{
+				{"--json", "--jsonl"},
+				{"--json", "--plain"},
+				{"--jsonl", "--plain"},
+				{"--json", "--jsonl", "--plain"},
+				{"--json", "--jsonl", "--plain=false"},
+				{"--json", "--jsonl=false", "--plain"},
+				{"--json=false", "--jsonl", "--plain"},
+			} {
+				t.Run(strings.Join(args, " "), func(t *testing.T) {
+					cmd := newTestCmd()
+					if err := cmd.ParseFlags(args); err != nil {
+						t.Fatal(err)
+					}
+					_, be, _, err := buildContext(cmd, &globalOptions{Backend: "osascript"}, "events.list")
+					if err == nil || err.Error() != "--json, --jsonl, and --plain are mutually exclusive" {
+						t.Fatalf("unexpected conflict error: %v", err)
+					}
+					if be != nil {
+						t.Fatal("expected nil backend on error")
+					}
+					if code := ExitCode(err); code != 2 {
+						t.Fatalf("exit code = %d, want 2", code)
+					}
+				})
+			}
+		})
 	}
 }
 
