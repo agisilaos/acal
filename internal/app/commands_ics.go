@@ -100,13 +100,16 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 				return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "dry_run": true, "warnings": len(warnings)}, warnings)
 			}
 			created := make([]contract.Event, 0, len(items))
-			for _, in := range items {
+			for i, in := range items {
 				ev, addErr := addEventWithTimeout(ctx, be, in)
 				if addErr != nil {
-					return failWithHint(p, contract.ErrGeneric, addErr, "Import failed; retry with --dry-run for diagnostics", 1)
+					return failImport(p, addErr, created, i+1)
 				}
 				if ev != nil {
 					created = append(created, *ev)
+					if historyErr := appendHistory(historyEntry{Type: "add", EventID: ev.ID, Created: ev}); historyErr != nil {
+						return failImport(p, fmt.Errorf("event created but history recording failed: %w", historyErr), created, i+1)
+					}
 				}
 			}
 			return successWithMeta(ctx, p, ro, created, map[string]any{"count": len(created), "warnings": len(warnings)}, warnings)
@@ -117,6 +120,26 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Preview import without writing")
 	cmd.Flags().BoolVar(&strict, "strict", false, "Treat parser warnings as errors")
 	return cmd
+}
+
+// Imports are nontransactional. Report confirmed progress even if the last
+// attempted backend write has an uncertain outcome.
+func failImport(p output.Printer, err error, created []contract.Event, item int) error {
+	ids := make([]string, 0, len(created))
+	for _, event := range created {
+		ids = append(ids, event.ID)
+	}
+	meta := backendErrorMeta(err)
+	code, exitCode := contract.ErrGeneric, 1
+	if meta == nil {
+		meta = map[string]any{}
+	} else {
+		code, exitCode = contract.ErrBackendUnavailable, 6
+	}
+	meta["created_ids"], meta["count"], meta["failed_item"] = ids, len(ids), item
+	hint := fmt.Sprintf("Import stopped at item %d; %d confirmed creations: %q. Inspect Calendar and history before retrying; the failed attempt may also have completed. Undo recorded creations individually or delete by ID; retrying the whole file can duplicate events", item, len(ids), ids)
+	_ = p.ErrorWithMeta(code, err.Error(), hint, meta)
+	return WrapPrinted(exitCode, err)
 }
 
 func buildICS(items []contract.Event) string {

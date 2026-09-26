@@ -2,7 +2,9 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -230,6 +232,7 @@ func TestParseICSRejectsRecurrenceProperties(t *testing.T) {
 }
 
 func TestEventsImportRecurrenceBoundary(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	const independent = "BEGIN:VEVENT\nSUMMARY:Independent\nDTSTART:20260220T090000Z\nDTEND:20260220T100000Z\nEND:VEVENT\n"
 	const recurring = "BEGIN:VEVENT\nSUMMARY:Series\nDTSTART:20260220T090000Z\nDTEND:20260220T100000Z\nRRULE:FREQ=WEEKLY\nEND:VEVENT\n"
 	for _, tc := range []struct {
@@ -365,6 +368,7 @@ func TestICSUnsupportedDateParameters(t *testing.T) {
 }
 
 func TestEventsImportTimezoneWrites(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	for _, strict := range []bool{false, true} {
 		t.Run(map[bool]string{false: "normal", true: "strict"}[strict], func(t *testing.T) {
 			fb := &scopeCaptureBackend{}
@@ -411,5 +415,123 @@ func TestEventsImportTimezoneWrites(t *testing.T) {
 				t.Fatalf("expected one warning: %s (%v)", out.String(), err)
 			}
 		})
+	}
+}
+
+type importProgressBackend struct {
+	scopeCaptureBackend
+	failAt int
+}
+
+func (b *importProgressBackend) AddEvent(_ context.Context, in backend.EventCreateInput) (*contract.Event, error) {
+	b.addCalls++
+	if b.addCalls == b.failAt {
+		return nil, fmt.Errorf("injected import failure")
+	}
+	return &contract.Event{ID: fmt.Sprintf("created-%d", b.addCalls), Title: in.Title, Start: in.Start, End: in.End}, nil
+}
+
+func TestImportRecordsAndReportsProgress(t *testing.T) {
+	for _, mode := range []string{"--json", "--jsonl", "--plain"} {
+		for _, tc := range []struct {
+			name                string
+			failAt, want, code  int
+			dry, historyFailure bool
+		}{
+			{name: "success", want: 2}, {name: "first fails", failAt: 1, code: 1}, {name: "second fails", failAt: 2, want: 1, code: 1}, {name: "preview", dry: true}, {name: "history fails", want: 1, code: 1, historyFailure: true},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+				fb := &importProgressBackend{failAt: tc.failAt}
+				orig := backendFactory
+				backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+				t.Cleanup(func() { backendFactory = orig })
+				if err := writeRedoHistory([]historyEntry{{Type: "add", EventID: "old", Created: &contract.Event{ID: "old"}}}); err != nil {
+					t.Fatal(err)
+				}
+				if tc.historyFailure {
+					if err := os.Mkdir(historyFilePath(), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				path := filepath.Join(t.TempDir(), "in.ics")
+				event := "BEGIN:VEVENT\nSUMMARY:Import\nDTSTART:20261001T090000Z\nDTEND:20261001T100000Z\nEND:VEVENT\n"
+				if err := os.WriteFile(path, []byte("BEGIN:VCALENDAR\n"+event+event+"END:VCALENDAR\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"events", "import", "--file", path, "--calendar", "Work", mode}
+				if tc.dry {
+					args = append(args, "--dry-run")
+				}
+				cmd := NewRootCommand()
+				var out, errOut bytes.Buffer
+				cmd.SetOut(&out)
+				cmd.SetErr(&errOut)
+				cmd.SetArgs(args)
+				if code := ExitCode(cmd.Execute()); code != tc.code {
+					t.Fatalf("exit=%d want=%d: %s", code, tc.code, &errOut)
+				}
+				if tc.code != 0 {
+					if out.Len() != 0 {
+						t.Fatalf("failure stdout: %s", &out)
+					}
+					if !strings.Contains(errOut.String(), "retrying the whole file can duplicate") {
+						t.Fatalf("missing recovery hint: %s", &errOut)
+					}
+					if mode != "--plain" {
+						var env struct {
+							Meta struct {
+								Count int
+								IDs   []string `json:"created_ids"`
+								Item  int      `json:"failed_item"`
+							}
+						}
+						if err := json.Unmarshal(errOut.Bytes(), &env); err != nil {
+							t.Fatal(err)
+						}
+						if env.Meta.Count != tc.want || len(env.Meta.IDs) != tc.want || env.Meta.Item < 1 {
+							t.Fatalf("progress: %s", &errOut)
+						}
+					}
+				}
+				if tc.historyFailure {
+					return
+				}
+				entries, err := readHistory()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(entries) != tc.want {
+					t.Fatalf("history=%d want=%d", len(entries), tc.want)
+				}
+				redo, err := readRedoHistory()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.want > 0 && len(redo) != 0 || tc.want == 0 && len(redo) != 1 {
+					t.Fatalf("redo=%d", len(redo))
+				}
+				for i, e := range entries {
+					if e.Type != "add" || e.Created == nil || e.EventID != fmt.Sprintf("created-%d", i+1) {
+						t.Fatalf("bad history: %+v", e)
+					}
+				}
+				if tc.want > 0 {
+					cmd := NewRootCommand()
+					cmd.SetOut(io.Discard)
+					cmd.SetErr(io.Discard)
+					cmd.SetArgs([]string{"history", "undo", "--json"})
+					if err := cmd.Execute(); err != nil {
+						t.Fatal(err)
+					}
+					if fb.deleteCalls != 1 {
+						t.Fatal("undo did not delete imported event")
+					}
+				}
+				if tc.dry && fb.addCalls != 0 {
+					t.Fatal("preview wrote events")
+				}
+			})
+		}
 	}
 }

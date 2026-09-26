@@ -349,6 +349,8 @@ flattened into one-off appointments. `--strict` rejects a file with any parser
 warnings before creating any events, including otherwise valid entries. Use
 `--dry-run --json` to inspect importable events and warnings.
 
+Imports write events one at a time and record each confirmed creation in undo history, clearing redo. On failure, earlier creations remain: JSON/JSONL error metadata reports `created_ids`, `count`, and the one-based importable `failed_item`; plain errors include the same progress in the hint. A history recording failure stops the import after the completed creation. Inspect Calendar and history before retrying, since the last attempted write may also have completed. Undo recorded entries individually or delete confirmed IDs; retrying the whole file can create duplicates.
+
 ICS export writes the occurrences returned for `--from`/`--to` (and `--limit`,
 when set) as separate VEVENT entries. It does not reconstruct recurrence rules
 or exceptions, so exporting and importing is not a recurrence-preserving round trip.
