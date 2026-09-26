@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -106,7 +107,10 @@ func (b *OsaScriptBackend) ListEvents(ctx context.Context, f EventFilter) ([]con
 	if err != nil {
 		return nil, err
 	}
+	return b.listEventsFromDB(ctx, dbPath, f)
+}
 
+func (b *OsaScriptBackend) listEventsFromDB(ctx context.Context, dbPath string, f EventFilter) ([]contract.Event, error) {
 	fromCocoa := f.From.Unix() - cocoaEpochOffset
 	toCocoa := f.To.Unix() - cocoaEpochOffset
 	if toCocoa < fromCocoa {
@@ -423,8 +427,29 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 }
 
 func (b *OsaScriptBackend) GetEventByID(ctx context.Context, id string) (*contract.Event, error) {
-	now := time.Now()
-	items, err := b.ListEvents(ctx, EventFilter{From: now.AddDate(-3, 0, 0), To: now.AddDate(3, 0, 0), Limit: 0})
+	return getEventByID(ctx, id, b.ListEvents)
+}
+
+func getEventByID(ctx context.Context, id string, listEvents func(context.Context, EventFilter) ([]contract.Event, error)) (*contract.Event, error) {
+	_, occurrence, present, valid := parseReadEventID(id)
+	if !present || !valid || occurrence == math.MinInt64 || occurrence >= math.MaxInt64-cocoaEpochOffset {
+		return nil, errors.New("event not found")
+	}
+	// SQLite casts fractional starts toward zero: n can represent [n,n+1),
+	// (n-1,n], or (-1,1) for positive, negative, or zero n respectively.
+	// Include both boundaries; exact ID equality below rejects adjacent IDs.
+	f := EventFilter{
+		From: time.Unix(occurrence+cocoaEpochOffset-1, 0),
+		To:   time.Unix(occurrence+cocoaEpochOffset+1, 0),
+	}
+	if f.From.IsZero() {
+		// ListEvents reserves the Go zero time for an unspecified bound.
+		f.From = f.From.Add(-time.Second)
+	}
+	if f.To.IsZero() {
+		f.To = f.To.Add(time.Second)
+	}
+	items, err := listEvents(ctx, f)
 	if err != nil {
 		return nil, err
 	}

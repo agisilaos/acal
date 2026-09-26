@@ -1,13 +1,54 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/agis/acal/internal/backend"
 	"github.com/agis/acal/internal/contract"
 )
+
+type queryStage uint8
+
+const (
+	queryFetch queryStage = iota
+	queryParse
+	queryApply
+)
+
+type queryError struct {
+	stage queryStage
+	err   error
+}
+
+func (e *queryError) Error() string { return e.err.Error() }
+func (e *queryError) Unwrap() error { return e.err }
+
+// executeQuery limits results only after filtering and sorting the complete range.
+func executeQuery(ctx context.Context, be backend.Backend, filter backend.EventFilter, wheres []string, sortField, order string) ([]contract.Event, *queryError) {
+	limit := filter.Limit
+	filter.Limit = 0
+	items, err := listEventsWithTimeout(ctx, be, filter)
+	if err != nil {
+		return nil, &queryError{stage: queryFetch, err: err}
+	}
+	preds, err := parsePredicates(wheres)
+	if err != nil {
+		return nil, &queryError{stage: queryParse, err: err}
+	}
+	items, err = applyPredicates(items, preds)
+	if err != nil {
+		return nil, &queryError{stage: queryApply, err: err}
+	}
+	sortEvents(items, sortField, order)
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, nil
+}
 
 type predicate struct {
 	field string
@@ -135,7 +176,10 @@ func compareTime(actual time.Time, op, expected string) (bool, error) {
 
 func sortEvents(items []contract.Event, sortField, order string) {
 	desc := strings.EqualFold(order, "desc")
-	sort.Slice(items, func(i, j int) bool {
+	sort.SliceStable(items, func(i, j int) bool {
+		if desc {
+			i, j = j, i
+		}
 		var less bool
 		switch strings.ToLower(sortField) {
 		case "title":
@@ -148,9 +192,6 @@ func sortEvents(items []contract.Event, sortField, order string) {
 			less = items[i].CalendarName < items[j].CalendarName
 		default:
 			less = items[i].Start.Before(items[j].Start)
-		}
-		if desc {
-			return !less
 		}
 		return less
 	})

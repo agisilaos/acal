@@ -67,6 +67,11 @@ Use the implemented command set below and the examples section for common flows.
 - `--fail-on-degraded` fails non-health commands when environment is degraded
 - `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
 
+Plain event records display embedded control characters as visible escapes
+(for example, `\n`, `\t`, and `\u001b`) while preserving readable Unicode.
+With `--fields`, tabs separate columns and newlines separate records. JSON and
+JSONL retain the original field values through standard JSON encoding.
+
 ## Agent usage
 
 Recommended automation patterns:
@@ -85,6 +90,10 @@ Recommended automation patterns:
   - inspect `acal history list --json`
   - rollback with `acal history undo --json`
   - re-apply with `acal history redo --json`
+- Update timing and history:
+  - Ordinary and batch updates calculate duration from the supplied start, or read the existing start when omitted. End-only updates also read the existing start to validate ordering; read failures stop these updates, including previews.
+  - Field-only previews and previews with all required timing values supplied do not read the event unless a sequence check is requested.
+  - Update history uses a snapshot taken before writing. If that read fails, an ordinary update can proceed without history when neither timing nor sequence validation needs it; batch updates require the snapshot. These reads do not make updates atomic against concurrent external changes, and previously recorded incorrect history is not repaired.
 - Reminder writes are read-back verified:
   - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 
@@ -98,7 +107,8 @@ Exit codes:
 - `7`: concurrency conflict (sequence mismatch)
 
 Notes:
-- `doctor` and `status` share readiness semantics. Degraded environments can still be `ready=true` when core automation checks pass.
+- `doctor`, `status`, `status explain`, and `setup` exit `0` when `ready=true` and `6` when required checks fail or are missing, in both plain and JSON output. Degraded environments can still be `ready=true` when core automation checks pass, even if the backend reports an error.
+- After checks run, each health command prints one health report to stdout. When not ready, it also prints one stderr diagnostic unless a backend error was reported by `doctor` or `status explain`; those commands keep stderr empty in that case. Not-ready `status` and `setup` results with a backend error include remediation guidance in their stderr diagnostic.
 - `status` and `doctor` include `degraded_reason_codes` for machine-actionable remediation.
 - `status explain` prints a concise health explanation and remediation steps.
 
@@ -189,6 +199,11 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+`events query` and `queries run` apply predicates and sorting before the result limit.
+A positive limit returns at most that many matches; zero or a negative limit returns all matches.
+These commands fetch the complete selected date/calendar range, so a small result limit does not reduce scan work or memory use. Narrow the range or calendars for large datasets.
+Equal sort keys retain their fetched order in either direction; tie order can differ between backends.
+
 ## Docs
 
 - CLI roadmap and expansion plan: `docs/cli-expansion-roadmap.md`
@@ -196,7 +211,9 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 
 ## Notes
 
+- `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
+- Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
 - SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
@@ -222,6 +239,7 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
   - Downgrade limitation: older acal binaries reject reminder entries during undo/redo, and can discard their snapshot fields when rewriting a stack for another operation. Do not use an older binary against these history files if reminder recovery is needed.
   - `queries.json`: saved query aliases.
     - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
+- History and redo contain full event snapshots. On macOS, accessing them restricts the `acal` config directory to `0700` and each accessed snapshot file to `0600`, including existing storage and history dry runs. Shared parent directories are unchanged.
 - Delete safety model:
   - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
   - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.
