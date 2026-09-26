@@ -171,6 +171,7 @@ mkdir -p "$dist_dir"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+cp LICENSE "$tmp_dir/LICENSE"
 
 if ! git rev-parse -q --verify HEAD >/dev/null 2>&1; then
   err "repository has no commits yet; create an initial commit before running release scripts"
@@ -206,7 +207,7 @@ build_archive() {
 
   rm -f "$bin_path"
   GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 "${build_cmd[@]}"
-  tar -C "$tmp_dir" -czf "$archive_path" "$CLI_NAME"
+  tar -C "$tmp_dir" -czf "$archive_path" "$CLI_NAME" LICENSE
 }
 
 build_archive amd64

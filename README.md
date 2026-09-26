@@ -2,6 +2,8 @@
 
 `acal` is a Go CLI for querying and managing Apple Calendar with human and agent-friendly output.
 
+Released under the [MIT License](LICENSE). Binary archives include the license.
+
 ## Install
 
 ```bash
