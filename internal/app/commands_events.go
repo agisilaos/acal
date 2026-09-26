@@ -397,45 +397,62 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 				patch.Start = &t
 			}
-			var current *contract.Event
-			getCurrent := func() error {
-				if current != nil {
-					return nil
-				}
-				item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
-				if getErr != nil {
-					return getErr
-				}
-				current = item
-				return nil
-			}
-			if ifMatch > 0 {
-				if getErr := getCurrent(); getErr != nil {
-					return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
-				}
-				if current.Sequence != ifMatch {
-					err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
-					return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
-				}
-			}
+			var duration time.Duration
 			if cmd.Flags().Changed("end") || cmd.Flags().Changed("duration") {
-				base := time.Now()
-				if patch.Start == nil {
-					if getErr := getCurrent(); getErr == nil && current != nil {
-						base = current.Start
+				if strings.TrimSpace(upEnd) != "" && strings.TrimSpace(upDuration) != "" {
+					return failWithHint(p, contract.ErrInvalidUsage, errors.New("use either --end or --duration, not both"), "Use --end or --duration", 2)
+				}
+				if strings.TrimSpace(upEnd) != "" {
+					end, parseErr := timeparse.ParseDateTime(upEnd, time.Now(), loc)
+					if parseErr != nil {
+						return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use --end or --duration", 2)
+					}
+					patch.End = &end
+				} else {
+					if strings.TrimSpace(upDuration) == "" {
+						return failWithHint(p, contract.ErrInvalidUsage, errors.New("missing --end or --duration"), "Use --end or --duration", 2)
+					}
+					duration, err = time.ParseDuration(upDuration)
+					if err != nil {
+						return failWithHint(p, contract.ErrInvalidUsage, err, "Use --end or --duration", 2)
+					}
+					if duration <= 0 {
+						return failWithHint(p, contract.ErrInvalidUsage, errors.New("--duration must be positive"), "Use --end or --duration", 2)
 					}
 				}
-				if current != nil && patch.Start == nil {
-					base = current.Start
+			}
+			needsStart := patch.Start == nil && (patch.End != nil || duration > 0)
+			if patch.Start != nil && patch.End != nil && !patch.End.After(*patch.Start) {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--end must be after --start"), "Use --end or --duration", 2)
+			}
+			var current *contract.Event
+			if !upDryRun || needsStart || ifMatch > 0 {
+				current, err = getEventByIDWithTimeout(ctx, be, args[0])
+				if err != nil {
+					if ifMatch > 0 {
+						return failWithHint(p, contract.ErrNotFound, err, "Unable to verify sequence for --if-match-seq", 4)
+					}
+					if needsStart {
+						return failWithHint(p, contract.ErrNotFound, err, "Unable to read existing start for update", 4)
+					}
+					current = nil
 				}
-				if patch.Start != nil {
-					base = *patch.Start
+			}
+			if ifMatch > 0 && current.Sequence != ifMatch {
+				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
+				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+			}
+			if patch.End != nil || duration > 0 {
+				start := patch.Start
+				if needsStart {
+					start = &current.Start
 				}
-				t, e := resolveEnd(upEnd, upDuration, base, loc)
-				if e != nil {
-					return failWithHint(p, contract.ErrInvalidUsage, e, "Use --end or --duration", 2)
+				if duration > 0 {
+					end := start.Add(duration)
+					patch.End = &end
+				} else if needsStart && !patch.End.After(*start) {
+					return failWithHint(p, contract.ErrInvalidUsage, errors.New("--end must be after --start"), "Use --end or --duration", 2)
 				}
-				patch.End = &t
 			}
 			if upDryRun {
 				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, nil)
@@ -443,11 +460,6 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
-			}
-			if current == nil {
-				if getErr := getCurrent(); getErr != nil {
-					current = nil
-				}
 			}
 			if current != nil {
 				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
