@@ -39,7 +39,7 @@ type globalOptions struct {
 
 func Execute() int {
 	cmd := NewRootCommand()
-	err := cmd.Execute()
+	err := executeCommand(cmd, os.Args[1:])
 	if err != nil {
 		renderTopLevelError(cmd, err)
 	}
@@ -74,7 +74,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&opts.FailOnDegraded, "fail-on-degraded", false, "Fail if backend health is degraded")
 	root.PersistentFlags().StringVar(&opts.Profile, "profile", "default", "Config profile")
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "Config file path")
-	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript|eventkit")
+	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript (eventkit is not implemented)")
 	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for dates and output (empty uses system local)")
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
@@ -97,6 +97,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newQuickAddCmd(opts))
 	root.AddCommand(newCompletionCmd(root))
 
+	classifyUsageErrors(root)
 	return root
 }
 
