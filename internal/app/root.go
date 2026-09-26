@@ -38,7 +38,7 @@ type globalOptions struct {
 
 func Execute() int {
 	cmd := NewRootCommand()
-	err := cmd.Execute()
+	err := executeCommand(cmd, os.Args[1:])
 	if err != nil {
 		renderTopLevelError(cmd, err)
 	}
@@ -96,6 +96,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newQuickAddCmd(opts))
 	root.AddCommand(newCompletionCmd(root))
 
+	classifyUsageErrors(root)
 	return root
 }
 
