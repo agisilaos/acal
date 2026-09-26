@@ -82,10 +82,10 @@ func (p Printer) ErrorWithMeta(code contract.ErrorCode, message, hint string, me
 		return enc.Encode(env)
 	}
 	if hint != "" {
-		_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\nhint: %s\n", p.errorLabel(), message, hint)
+		_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\nhint: %s\n", p.errorLabel(), EscapePlainControls(message), EscapePlainControls(hint))
 		return nil
 	}
-	_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\n", p.errorLabel(), message)
+	_, _ = fmt.Fprintf(p.errWriter(), "%s: %s\n", p.errorLabel(), EscapePlainControls(message))
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (p Printer) EffectiveSuccessMode() Mode {
 	if p.Mode != ModeAuto {
 		return p.Mode
 	}
-	if p.writerIsTerminal(p.outWriter()) {
+	if WriterIsTerminal(p.outWriter()) {
 		return ModePlain
 	}
 	return ModeJSON
@@ -103,7 +103,7 @@ func (p Printer) EffectiveErrorMode() Mode {
 	if p.Mode != ModeAuto {
 		return p.Mode
 	}
-	if p.writerIsTerminal(p.errWriter()) {
+	if WriterIsTerminal(p.errWriter()) {
 		return ModePlain
 	}
 	return ModeJSON
@@ -167,10 +167,11 @@ func (p Printer) colorsEnabled() bool {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("TERM")), "dumb") {
 		return false
 	}
-	return p.writerIsTerminal(p.errWriter())
+	return WriterIsTerminal(p.errWriter())
 }
 
-func (p Printer) writerIsTerminal(w io.Writer) bool {
+// WriterIsTerminal reports whether the destination is an interactive character device.
+func WriterIsTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
 		return false
@@ -185,7 +186,7 @@ func (p Printer) writerIsTerminal(w io.Writer) bool {
 func flatten(v any, fields []string) string {
 	if len(fields) == 0 {
 		b, _ := json.Marshal(v)
-		return escapePlainControls(string(b))
+		return EscapePlainControls(string(b))
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer {
@@ -193,7 +194,7 @@ func flatten(v any, fields []string) string {
 	}
 	if rv.Kind() != reflect.Struct {
 		b, _ := json.Marshal(v)
-		return escapePlainControls(string(b))
+		return EscapePlainControls(string(b))
 	}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
@@ -207,14 +208,14 @@ func flatten(v any, fields []string) string {
 		for fv.Kind() == reflect.Pointer && !fv.IsNil() {
 			fv = fv.Elem()
 		}
-		parts = append(parts, escapePlainControls(fmt.Sprint(fv.Interface())))
+		parts = append(parts, EscapePlainControls(fmt.Sprint(fv.Interface())))
 	}
 	return strings.Join(parts, "\t")
 }
 
-// escapePlainControls keeps data from supplying terminal commands or row/column
+// EscapePlainControls keeps data from supplying terminal commands or row/column
 // separators. Unicode escapes also preserve valid JSON in the plain fallback.
-func escapePlainControls(s string) string {
+func EscapePlainControls(s string) string {
 	var b strings.Builder
 	for len(s) > 0 {
 		r, size := utf8.DecodeRuneInString(s)

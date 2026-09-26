@@ -148,7 +148,7 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		}
 	}
 	if resolved.Verbose {
-		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, resolved.Backend, resolved.OutputMode, resolved.TZ, resolved.Profile, resolved.Timeout)
+		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, output.EscapePlainControls(resolved.Backend), resolved.OutputMode, output.EscapePlainControls(resolved.TZ), output.EscapePlainControls(resolved.Profile), resolved.Timeout)
 	}
 	return printer, be, resolved, nil
 }

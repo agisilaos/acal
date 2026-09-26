@@ -41,7 +41,7 @@ func newHistoryCmd(opts *globalOptions) *cobra.Command {
 			}
 			if p.EffectiveSuccessMode() == output.ModePlain {
 				for _, e := range paged {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", e.At.Format(time.RFC3339), e.Type, e.EventID, e.TxID, e.OpID)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", e.At.Format(time.RFC3339), output.EscapePlainControls(e.Type), output.EscapePlainControls(e.EventID), output.EscapePlainControls(e.TxID), output.EscapePlainControls(e.OpID))
 				}
 				return nil
 			}

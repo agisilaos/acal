@@ -168,6 +168,42 @@ func TestPrinterErrorWithMetaJSON(t *testing.T) {
 	}
 }
 
+func TestPrinterErrorEscapesControlsAndPreservesJSON(t *testing.T) {
+	text := "Café 東京\x1b]52;c;payload\a\xff"
+	for r := rune(0); r <= 0x9f; r++ {
+		if r <= 0x1f || r >= 0x7f {
+			text += string(r)
+		}
+	}
+	for _, mode := range []Mode{ModePlain, ModeJSON, ModeJSONL} {
+		for _, hint := range []string{"", text} {
+			var out bytes.Buffer
+			p := Printer{Mode: mode, Err: &out, NoColor: true}
+			if err := p.ErrorWithMeta(contract.ErrInvalidUsage, text, hint, nil); err != nil {
+				t.Fatal(err)
+			}
+			if mode == ModePlain {
+				for _, r := range out.String() {
+					if (r < 0x20 && r != '\n') || (r >= 0x7f && r <= 0x9f) {
+						t.Fatalf("literal control %U in %q", r, out.String())
+					}
+				}
+				if !strings.Contains(out.String(), `Café 東京\u001b]52;c;payload\u0007\xff`) {
+					t.Fatalf("lost readable text or visible escapes: %q", out.String())
+				}
+			} else {
+				var env contract.ErrorEnvelope
+				if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+					t.Fatal(err)
+				}
+				if env.Error.Message != strings.ToValidUTF8(text, "�") || env.Error.Hint != strings.ToValidUTF8(hint, "�") {
+					t.Fatalf("JSON changed semantic data: %+v", env.Error)
+				}
+			}
+		}
+	}
+}
+
 func TestPrinterPlainOptionalFields(t *testing.T) {
 	title := "Changed\tTitle\n"
 	empty := ""

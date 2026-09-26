@@ -263,7 +263,10 @@ Quick-add plain output (both `quick-add` and `events quick-add`) defaults to
 Use `--fields title,start` to select columns in that order. Start and end use
 RFC3339 timestamps; calendar uses the created event's name, falling back to its
 ID. Control characters in plain cells are escaped, including tabs, newlines,
-and terminal escape characters. JSON and JSONL retain their full payloads.
+and terminal escape characters. The same escaping protects plain errors, history,
+health reports, and verbose diagnostics. Interactive ICS export escapes controls
+inside records, including exports to terminal device paths. Use `--out <file>`
+with a regular file or redirect `--plain` stdout to preserve serialized ICS bytes. JSON and JSONL retain their full payloads.
 
 ```bash
 ./acal doctor --json

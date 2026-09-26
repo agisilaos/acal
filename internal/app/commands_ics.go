@@ -40,7 +40,15 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 			ics := buildICS(items, ro.Location)
 			meta := map[string]any{"count": len(items)}
 			if strings.TrimSpace(outPath) != "" {
-				if err := os.WriteFile(outPath, []byte(ics), 0o644); err != nil {
+				file, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+				if err == nil {
+					err = writeICS(file, ics)
+					closeErr := file.Close()
+					if err == nil {
+						err = closeErr
+					}
+				}
+				if err != nil {
 					return failWithHint(p, contract.ErrGeneric, err, "Check destination path permissions", 1)
 				}
 				return successWithMeta(ctx, p, ro, map[string]any{"path": outPath, "events": len(items)}, meta, nil)
@@ -48,8 +56,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 			if m := p.EffectiveSuccessMode(); m == output.ModeJSON || m == output.ModeJSONL {
 				return successWithMeta(ctx, p, ro, map[string]any{"ics": ics, "events": len(items)}, meta, nil)
 			}
-			_, _ = fmt.Fprint(c.OutOrStdout(), ics)
-			return nil
+			return writeICS(c.OutOrStdout(), ics)
 		},
 	}
 	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
@@ -343,4 +350,23 @@ func parseICSDate(raw string, loc *time.Location) (time.Time, bool, bool) {
 		return time.Time{}, false, false
 	}
 	return t, false, true
+}
+
+// writeICS checks the destination itself, including --out terminal device paths.
+func writeICS(out io.Writer, ics string) error {
+	if output.WriterIsTerminal(out) {
+		ics = terminalICS(ics)
+	}
+	_, err := io.WriteString(out, ics)
+	return err
+}
+
+// terminalICS preserves generated record separators while escaping data controls.
+// Regular file and pipe exports bypass this display-only transformation.
+func terminalICS(ics string) string {
+	lines := strings.Split(ics, "\r\n")
+	for i, line := range lines {
+		lines[i] = output.EscapePlainControls(line)
+	}
+	return strings.Join(lines, "\r\n")
 }

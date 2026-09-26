@@ -124,10 +124,10 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			if p.EffectiveSuccessMode() == output.ModePlain {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ready=%t degraded=%t\n", setup.Ready, setup.Degraded)
 				if len(reasons) > 0 {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "reasons=%s\n", strings.Join(reasons, ","))
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "reasons=%s\n", output.EscapePlainControls(strings.Join(reasons, ",")))
 				}
 				for _, s := range setup.NextSteps {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- %s\n", s)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "- %s\n", output.EscapePlainControls(s))
 				}
 			} else {
 				_ = successWithMeta(ctx, p, ro, map[string]any{
@@ -223,24 +223,24 @@ func deriveDegradedReasonCodes(checks []contract.DoctorCheck, derr error) []stri
 func printDoctorPlain(out io.Writer, checks []contract.DoctorCheck, setup setupResult, reasonCodes []string) error {
 	_, _ = fmt.Fprintf(out, "ready=%t degraded=%t checks=%d\n", setup.Ready, setup.Degraded, len(checks))
 	if len(reasonCodes) > 0 {
-		_, _ = fmt.Fprintf(out, "reasons=%s\n", strings.Join(reasonCodes, ","))
+		_, _ = fmt.Fprintf(out, "reasons=%s\n", output.EscapePlainControls(strings.Join(reasonCodes, ",")))
 	}
 	for _, c := range checks {
-		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", c.Status, c.Name, c.Message)
+		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", output.EscapePlainControls(c.Status), output.EscapePlainControls(c.Name), output.EscapePlainControls(c.Message))
 	}
 	for _, step := range setup.NextSteps {
-		_, _ = fmt.Fprintf(out, "next: %s\n", step)
+		_, _ = fmt.Fprintf(out, "next: %s\n", output.EscapePlainControls(step))
 	}
 	return nil
 }
 
 func printStatusPlain(out io.Writer, res statusResult) error {
-	_, _ = fmt.Fprintf(out, "ready=%t degraded=%t backend=%s profile=%s output_mode=%s checks=%d\n", res.Ready, res.Degraded, res.Backend, res.Profile, res.OutputMode, len(res.Checks))
+	_, _ = fmt.Fprintf(out, "ready=%t degraded=%t backend=%s profile=%s output_mode=%s checks=%d\n", res.Ready, res.Degraded, output.EscapePlainControls(res.Backend), output.EscapePlainControls(res.Profile), output.EscapePlainControls(res.OutputMode), len(res.Checks))
 	if len(res.ReasonCodes) > 0 {
-		_, _ = fmt.Fprintf(out, "reasons=%s\n", strings.Join(res.ReasonCodes, ","))
+		_, _ = fmt.Fprintf(out, "reasons=%s\n", output.EscapePlainControls(strings.Join(res.ReasonCodes, ",")))
 	}
 	for _, c := range res.Checks {
-		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", c.Status, c.Name, c.Message)
+		_, _ = fmt.Fprintf(out, "[%s] %s: %s\n", output.EscapePlainControls(c.Status), output.EscapePlainControls(c.Name), output.EscapePlainControls(c.Message))
 	}
 	return nil
 }
