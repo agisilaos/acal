@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/agis/acal/internal/contract"
 )
@@ -183,7 +185,7 @@ func (p Printer) writerIsTerminal(w io.Writer) bool {
 func flatten(v any, fields []string) string {
 	if len(fields) == 0 {
 		b, _ := json.Marshal(v)
-		return string(b)
+		return escapePlainControls(string(b))
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer {
@@ -191,7 +193,7 @@ func flatten(v any, fields []string) string {
 	}
 	if rv.Kind() != reflect.Struct {
 		b, _ := json.Marshal(v)
-		return string(b)
+		return escapePlainControls(string(b))
 	}
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
@@ -202,7 +204,32 @@ func flatten(v any, fields []string) string {
 			parts = append(parts, "")
 			continue
 		}
-		parts = append(parts, fmt.Sprint(fv.Interface()))
+		parts = append(parts, escapePlainControls(fmt.Sprint(fv.Interface())))
 	}
 	return strings.Join(parts, "\t")
+}
+
+// escapePlainControls keeps data from supplying terminal commands or row/column
+// separators. Unicode escapes also preserve valid JSON in the plain fallback.
+func escapePlainControls(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		switch {
+		case r == utf8.RuneError && size == 1:
+			fmt.Fprintf(&b, `\x%02x`, s[0])
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteString(s[:size])
+		}
+		s = s[size:]
+	}
+	return b.String()
 }

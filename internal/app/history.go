@@ -35,13 +35,62 @@ func historyFilePath() string {
 	return filepath.Join(dir, "history.jsonl")
 }
 
+// openHistoryFile repairs legacy permissions before accessing snapshot contents.
+// Only the application directory is tightened, never shared config ancestors.
+func openHistoryFile(path string, flag int) (*os.File, error) {
+	dir := filepath.Dir(path)
+	if flag&os.O_CREATE != 0 {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, err
+		}
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, err
+	}
+	// Opening with O_TRUNC would destroy existing snapshots before permission
+	// repair succeeds. Chmod the opened file, then truncate that same file.
+	f, err := os.OpenFile(path, flag&^os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		f.Close()
+		return nil, fmt.Errorf("history storage is not a regular file: %s", path)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if flag&os.O_TRUNC != 0 {
+		if err := f.Truncate(0); err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
+func writeHistoryFile(path string, data []byte) error {
+	f, err := openHistoryFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
 func appendHistory(entry historyEntry) error {
 	path := historyFilePath()
 	if path == "" {
 		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
 	}
 	if entry.At.IsZero() {
 		entry.At = time.Now().UTC()
@@ -50,7 +99,7 @@ func appendHistory(entry historyEntry) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := openHistoryFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY)
 	if err != nil {
 		return err
 	}
@@ -62,14 +111,22 @@ func appendHistory(entry historyEntry) error {
 }
 
 func readHistory() ([]historyEntry, error) {
-	path := historyFilePath()
+	return readHistoryEntries(historyFilePath())
+}
+
+func readHistoryEntries(path string) ([]historyEntry, error) {
 	if path == "" {
 		return nil, nil
 	}
-	raw, err := os.ReadFile(path)
+	f, err := openHistoryFile(path, os.O_RDONLY)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +157,7 @@ func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
 	if path == "" {
 		return nil, false, nil
 	}
-	f, err := os.Open(path)
+	f, err := openHistoryFile(path, os.O_RDONLY)
 	if os.IsNotExist(err) {
 		return nil, false, nil
 	}
@@ -177,9 +234,6 @@ func writeHistory(entries []historyEntry) error {
 	if path == "" {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	var b strings.Builder
 	for _, e := range entries {
 		line, err := json.Marshal(e)
@@ -189,7 +243,7 @@ func writeHistory(entries []historyEntry) error {
 		b.Write(line)
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return writeHistoryFile(path, []byte(b.String()))
 }
 
 func redoFilePath() string {
@@ -202,40 +256,13 @@ func redoFilePath() string {
 }
 
 func readRedoHistory() ([]historyEntry, error) {
-	path := redoFilePath()
-	if path == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	out := make([]historyEntry, 0, len(lines))
-	for _, line := range lines {
-		s := strings.TrimSpace(line)
-		if s == "" {
-			continue
-		}
-		var e historyEntry
-		if err := json.Unmarshal([]byte(s), &e); err != nil {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out, nil
+	return readHistoryEntries(redoFilePath())
 }
 
 func writeRedoHistory(entries []historyEntry) error {
 	path := redoFilePath()
 	if path == "" {
 		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
 	}
 	var b strings.Builder
 	for _, e := range entries {
@@ -246,7 +273,7 @@ func writeRedoHistory(entries []historyEntry) error {
 		b.Write(line)
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return writeHistoryFile(path, []byte(b.String()))
 }
 
 func clearRedoHistory() error {

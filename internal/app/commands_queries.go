@@ -180,21 +180,16 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
-			items, err := listEventsWithTimeout(ctx, be, f)
-			if err != nil {
-				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
-			}
-			preds, err := parsePredicates(q.Wheres)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query has invalid predicates; re-save it", 2)
-			}
-			items, err = applyPredicates(items, preds)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query predicates failed; re-save it", 2)
-			}
-			sortEvents(items, q.Sort, q.Order)
-			if q.Limit > 0 && len(items) > q.Limit {
-				items = items[:q.Limit]
+			items, queryErr := executeQuery(ctx, be, f, q.Wheres, q.Sort, q.Order)
+			if queryErr != nil {
+				switch queryErr.stage {
+				case queryParse:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Saved query has invalid predicates; re-save it", 2)
+				case queryApply:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Saved query predicates failed; re-save it", 2)
+				default:
+					return failWithHint(p, contract.ErrBackendUnavailable, queryErr, "Run `acal doctor` for remediation", 6)
+				}
 			}
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items), "name": q.Name}, nil)
 		},

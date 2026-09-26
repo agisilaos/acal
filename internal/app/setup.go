@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/agis/acal/internal/contract"
@@ -35,16 +36,25 @@ func newSetupCmd(opts *globalOptions) *cobra.Command {
 				"degraded": res.Degraded,
 				"count":    len(checks),
 			}, nil)
-			if res.Ready {
-				return nil
-			}
-			if derr != nil {
+			if !res.Ready && derr != nil {
 				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` again after applying next_steps")
-				return WrapPrinted(6, derr)
 			}
-			return Wrap(6, err)
+			return healthOutcome(res.Ready, derr, "setup not ready")
 		},
 	}
+}
+
+// healthOutcome applies readiness after the command has rendered its health report
+// and any backend error diagnostic. A not-ready result without a backend error
+// still needs a top-level diagnostic.
+func healthOutcome(ready bool, derr error, notReadyMessage string) error {
+	if ready {
+		return nil
+	}
+	if derr != nil {
+		return WrapPrinted(6, derr)
+	}
+	return Wrap(6, errors.New(notReadyMessage))
 }
 
 func buildSetupResult(checks []contract.DoctorCheck, derr error, backend string) setupResult {
