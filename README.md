@@ -90,6 +90,7 @@ Recommended automation patterns:
   - inspect `acal history list --json`
   - rollback with `acal history undo --json`
   - re-apply with `acal history redo --json`
+- Event updates preserve omitted title, location, notes, and URL fields. Supplied values are literal (including `__ACAL_KEEP__`); an empty string clears the field.
 - Update timing and history:
   - Ordinary and batch updates calculate duration from the supplied start, or read the existing start when omitted. End-only updates also read the existing start to validate ordering; read failures stop these updates, including previews.
   - Field-only previews and previews with all required timing values supplied do not read the event unless a sequence check is requested.
