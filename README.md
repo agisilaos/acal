@@ -197,6 +197,7 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 ## Notes
 
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
+- Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
 - SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
 - Writes use AppleScript against Calendar.app.
 - Immediately after writes, read cache refresh can lag briefly.
