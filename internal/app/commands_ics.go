@@ -190,7 +190,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		start, allDayStart, okStart := parseICSDate(kv["DTSTART"], loc)
 		end, allDayEnd, okEnd := parseICSDate(kv["DTEND"], loc)
 		if !okStart || !okEnd || !end.After(start) {
-			warnings = append(warnings, "skipped VEVENT with invalid DTSTART/DTEND")
+			warnings = append(warnings, "skipped VEVENT with invalid or unsupported DTSTART/DTEND (check VALUE and IANA TZID)")
 			return
 		}
 		items = append(items, backend.EventCreateInput{
@@ -225,11 +225,11 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		if len(parts) != 2 {
 			continue
 		}
-		keyRaw := strings.ToUpper(strings.TrimSpace(parts[0]))
+		keyRaw := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		key := keyRaw
+		key := strings.ToUpper(keyRaw)
 		if strings.Contains(keyRaw, ";") {
-			key = strings.SplitN(keyRaw, ";", 2)[0]
+			key = strings.ToUpper(strings.SplitN(keyRaw, ";", 2)[0])
 		}
 		if key == "DTSTART" || key == "DTEND" {
 			kv[key] = keyRaw + ":" + value
@@ -249,9 +249,45 @@ func parseICSDate(raw string, loc *time.Location) (time.Time, bool, bool) {
 	if len(parts) != 2 {
 		return time.Time{}, false, false
 	}
-	key := strings.ToUpper(parts[0])
+	params := map[string]string{}
+	for _, param := range strings.Split(parts[0], ";")[1:] {
+		name, value, ok := strings.Cut(param, "=")
+		name = strings.ToUpper(name)
+		if !ok || value == "" {
+			return time.Time{}, false, false
+		}
+		if _, duplicate := params[name]; duplicate {
+			return time.Time{}, false, false
+		}
+		// Preserve parameter value casing when resolving IANA zone names.
+		if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) && len(value) >= 2 {
+			value = value[1 : len(value)-1]
+		}
+		if value == "" {
+			return time.Time{}, false, false
+		}
+		params[name] = value
+	}
 	val := strings.TrimSpace(parts[1])
-	if strings.Contains(key, "VALUE=DATE") {
+	valueType := params["VALUE"]
+	if valueType != "" && !strings.EqualFold(valueType, "DATE") && !strings.EqualFold(valueType, "DATE-TIME") {
+		return time.Time{}, false, false
+	}
+	zone, hasZone := params["TZID"]
+	allDay := strings.EqualFold(valueType, "DATE")
+	if hasZone {
+		// DATE and UTC values must not carry TZID. Local is Go's process
+		// timezone sentinel, not an IANA identifier from the input file.
+		if allDay || strings.HasSuffix(val, "Z") || zone == "" || zone == "Local" {
+			return time.Time{}, false, false
+		}
+		var err error
+		loc, err = time.LoadLocation(zone)
+		if err != nil {
+			return time.Time{}, false, false
+		}
+	}
+	if allDay {
 		t, err := time.ParseInLocation("20060102", val, loc)
 		if err != nil {
 			return time.Time{}, true, false
