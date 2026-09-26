@@ -352,11 +352,47 @@ ICS export writes the occurrences returned for `--from`/`--to` (and `--limit`,
 when set) as separate VEVENT entries. It does not reconstruct recurrence rules
 or exceptions, so exporting and importing is not a recurrence-preserving round trip.
 
+Each `--where` argument is one literal `field operator value` clause. Repeat the
+flag to combine clauses with AND. Commas and embedded double quotes are passed
+through flag parsing, without CSV decoding. Shell-quote the whole clause:
+
+```bash
+acal events query --from today --to +7d --where 'title~a,b' --where 'calendar==Work' --json
+acal queries save comma-titles --from today --to +7d --where 'title~"a,b"' --where 'calendar==Work'
+acal queries run comma-titles --json
+```
+
+Migration: replace legacy comma lists such as `--where 'title~walk,calendar==Work'`
+with `--where 'title~walk' --where 'calendar==Work'`. Commas never separate clauses
+now. Existing saved `wheres` arrays already contain separate clauses and need no
+conversion; each element remains one clause.
+
+String fields are `title`, `calendar` (alias `calendar_name`), `calendar_id`,
+`location`, `notes`, and `id`. They support case-insensitive equality (`==`),
+inequality (`!=`), and substring matching (`~`). Time fields `start` and `end`
+support `==`, `!=`, `>`, `>=`, `<`, and `<=` with RFC3339 values, for example
+`--where 'start>=2026-02-20T09:00:00Z'`.
+
+The existing predicate grammar is unchanged: field names ignore case; whitespace
+around the clause, field, and value is trimmed; leading/trailing double quotes
+are stripped from the value. Embedded quotes remain literal, with no escape
+processing. Blank clauses are ignored and empty values are invalid. Operators
+are searched in precedence order `==`, `!=`, `~`, `>=`, `<=`, `>`, `<`, across the
+whole clause. Consequently values containing a higher-precedence operator are
+not supported (for example, `title~a==b`); quoting does not escape operators.
+
+Sorting accepts `start` (default), `end`, `title`, `updated_at`, or `calendar`;
+order accepts `asc` (default) or `desc`. Both accept case variants. Unsupported
+values, including explicitly empty direct-query flags, return invalid usage
+(exit 2) before listing events. Older saved presets with empty or omitted sort
+or order retain the corresponding default.
+
 Query execution validates every `--where` clause before listing events, including
 when the result would be empty or an earlier clause would exclude every event.
 Setup and date-range errors retain precedence. Clause syntax is checked first,
 then fields, operators, and values are validated in clause order. Saved queries
-keep their raw clauses and are validated when run, not when saved.
+keep their raw clauses and sorting options and are validated when run, not when
+saved. Sorting is validated after predicates, before listing events.
 
 `events query` and `queries run` apply predicates and sorting before the result limit.
 A positive limit returns at most that many matches; zero or a negative limit returns all matches.

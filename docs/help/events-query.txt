@@ -1,0 +1,31 @@
+Agent-focused deterministic query
+
+Usage:
+  acal events query [flags]
+
+Flags:
+      --calendar strings    Calendar ID or name (repeatable)
+      --from string         Range start (default "today")
+  -h, --help                help for query
+      --limit int           Limit results
+      --order string        Sort order: asc|desc (default "asc")
+      --sort string         Sort field: start|end|title|updated_at|calendar (default "start")
+      --to string           Range end (default "+30d")
+      --where stringArray   One literal predicate clause (repeatable; no comma splitting)
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics
