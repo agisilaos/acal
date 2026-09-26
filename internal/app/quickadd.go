@@ -67,12 +67,12 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
 				return WrapPrinted(1, err)
 			}
+			if item != nil {
+				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
+			}
 			if p.EffectiveSuccessMode() == output.ModePlain && item != nil {
 				_, _ = fmt.Fprintf(c.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", item.ID, item.Start.Format(time.RFC3339), item.End.Format(time.RFC3339), firstNonEmpty(item.CalendarName, item.CalendarID), item.Title)
 				return nil
-			}
-			if item != nil {
-				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
 			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
