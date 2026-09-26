@@ -178,6 +178,13 @@ second, `23:59:59`. An explicit midnight filter end is expanded the same way.
 An agenda `--day` timestamp keeps its time of day and ends one calendar day later,
 minus one second.
 
+Quick-add plain output (both `quick-add` and `events quick-add`) defaults to
+`id`, `start`, `end`, `calendar`, `title`, with `dry-run` as the preview ID.
+Use `--fields title,start` to select columns in that order. Start and end use
+RFC3339 timestamps; calendar uses the created event's name, falling back to its
+ID. Control characters in plain cells are escaped, including tabs, newlines,
+and terminal escape characters. JSON and JSONL retain their full payloads.
+
 ```bash
 ./acal doctor --json
 ./acal setup --json
@@ -192,6 +199,7 @@ minus one second.
 ./acal month --month 2026-02 --json
 ./acal view month --month 2026-02 --summary --plain --fields date,total
 ./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
+./acal quick-add "2026-10-01 09:00 Review @Work 30m" --dry-run --plain --fields title,start --tz UTC
 ./acal history list --json
 ./acal history list --json --limit 10 --offset 10
 ./acal history undo --dry-run --json
