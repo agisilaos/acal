@@ -124,7 +124,7 @@ func TestUpdateScriptCapturesActualTargetAfterWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := strings.Join(lines, "\n")
-	if strings.Index(script, "set representativeRef to targetRef") < strings.Index(script, "make new display alarm") || strings.Index(script, "set resultFields") < strings.Index(script, `if foundAny is false`) {
+	if strings.Index(script, "set representativeRef to targetRef") < strings.Index(script, "my replaceDisplayAlarm(targetRef") || strings.Index(script, "set resultFields") < strings.Index(script, `if foundAny is false`) {
 		t.Fatal("snapshot does not follow writes")
 	}
 	for _, field := range []string{"description of representativeRef", "url of representativeRef", "start date of representativeRef", "location of representativeRef"} {

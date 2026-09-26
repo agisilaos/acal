@@ -26,7 +26,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	if err != nil {
 		return nil, err
 	}
-	out, err := runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
+	out, err := runAppleScript(ctx, append(append(appleScriptDateHandlers(), alarmScriptHandlers()...), []string{
 		`on run argv`,
 		`set calName to item 1 of argv`,
 		`set titleText to item 2 of argv`,
@@ -38,6 +38,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`set allDayText to item 8 of argv`,
 		`set repeatText to item 9 of argv`,
 		`set reminderText to item 10 of argv`,
+		`if reminderText is not "__ACAL_KEEP__" then my requireAlarmAccess()`,
 		`set startDate to (my nativeDate(startText as integer))`,
 		`set endDate to (my nativeDate(endText as integer))`,
 		`tell application "Calendar"`,
@@ -59,8 +60,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`if repeatText starts with "yearly" then set recurrence of newEvent to yearly`,
 		`end if`,
 		`if reminderText is not "__ACAL_KEEP__" then`,
-		`delete every display alarm of newEvent`,
-		`make new display alarm at end of display alarms of newEvent with properties {trigger interval:(reminderText as integer)}`,
+		`my replaceDisplayAlarm(newEvent, targetCal, reminderText, "series")`,
 		`end if`,
 		`return uid of newEvent as text`,
 		`end tell`,
@@ -143,7 +143,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
 
-	lines := append(updateResultScriptHandlers(), []string{
+	lines := append(append(updateResultScriptHandlers(), alarmScriptHandlers()...), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
@@ -159,6 +159,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set repeatText to item 11 of argv`,
 		`set reminderText to item 12 of argv`,
 		`set clearReminderText to item 13 of argv`,
+		`if clearReminderText is "true" or reminderText is not "__ACAL_KEEP__" then my requireAlarmAccess()`,
 		`tell application "Calendar"`,
 		`set representativeRef to missing value`,
 		`set representativeCal to missing value`,
@@ -210,10 +211,8 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`if repeatText starts with "yearly" then set recurrence of targetRef to yearly`,
 		`end if`,
 		`end if`,
-		`if clearReminderText is "true" then delete every display alarm of targetRef`,
-		`if reminderText is not "__ACAL_KEEP__" then`,
-		`delete every display alarm of targetRef`,
-		`make new display alarm at end of display alarms of targetRef with properties {trigger interval:(reminderText as integer)}`,
+		`if clearReminderText is "true" or reminderText is not "__ACAL_KEEP__" then`,
+		`my replaceDisplayAlarm(targetRef, c, reminderText, scopeText)`,
 		`end if`,
 		`if representativeRef is missing value then`,
 		`set representativeRef to targetRef`,

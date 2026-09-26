@@ -2,7 +2,8 @@
 
 acal is a local macOS CLI running with the invoking user's filesystem and Calendar
 permissions. It has no server, service account, or network API. The implemented
-backend is `osascript`; the `eventkit` selection currently returns an error.
+backend is `osascript`, with an EventKit bridge for display-alarm changes; the
+standalone `eventkit` backend selection currently returns an error.
 The [README](../README.md) owns command syntax and output contracts; this document
 maps the implementation and the boundaries that changes need to preserve.
 
@@ -42,6 +43,14 @@ and data. Tabular reads request raw interpreter output and preserve empty traili
 cells when splitting rows. This boundary must hold for every caller, including batch input and
 history replay. SQL literals and LIKE patterns have their own escaping in the read
 adapter; neither boundary should rely on a caller sanitizing event text.
+
+Display-alarm replacement uses EventKit from the native script because Calendar's
+AppleScript delete handler fails for alarms. It requires full Calendar access for
+the invoking app, checked before any event mutation. The bridge resolves exactly
+one event using UID, start instant, and calendar name; it fails on ambiguity.
+It changes only display alarms, saves the existing event using the requested
+occurrence/future span, and verifies alarm values after refresh. No new helper
+executable, runtime compiler, or automatic permission request is needed.
 
 Native updates read results from the object changed by Calendar. They distinguish
 verified results, applied-but-unverified results, and unknown completion. Updates
@@ -94,3 +103,16 @@ macOS permission guarantees; those require a disposable-calendar integration run
 CI validates changes but does not publish releases. Publication uses the
 maintainer's Git/`gh` credentials and target configuration. See
 [Releasing](../RELEASING.md) for the human review and repository-target requirements.
+
+An opt-in native alarm regression creates and cleans up uniquely named calendars:
+
+```bash
+ACAL_CALENDAR_INTEGRATION=1 go test ./internal/backend -run '^TestNativeReminder' -count=1 -v
+```
+
+It requires Calendar Automation permission and full Calendar access. It covers
+clear/replacement, signed and zero offsets, event identity/fields, and recurrence
+save spans from the first occurrence. It does not qualify targeting later
+generated occurrences; Calendar can report those as not found before the alarm
+bridge runs. Routine CI skips these live mutations; in-memory EventKit alarm tests run
+on macOS without saving to a calendar.
