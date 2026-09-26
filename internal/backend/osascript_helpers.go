@@ -31,6 +31,7 @@ func runAppleScript(ctx context.Context, lines []string, args ...string) (string
 	for _, line := range lines {
 		cmdArgs = append(cmdArgs, "-e", line)
 	}
+	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, args...)
 	retries, backoff := osascriptRetryPolicy()
 	return runAppleScriptCommand(ctx, cmdArgs, retries, backoff)
@@ -42,6 +43,7 @@ func runUpdateAppleScript(ctx context.Context, lines []string, args ...string) (
 	for _, line := range lines {
 		cmdArgs = append(cmdArgs, "-e", line)
 	}
+	cmdArgs = append(cmdArgs, "--")
 	return runAppleScriptCommand(ctx, append(cmdArgs, args...), 0, 0)
 }
 

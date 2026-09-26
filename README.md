@@ -432,7 +432,7 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
 - SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only access and per-path connection reuse to reduce subprocess/open overhead. SQLite detects externally committed changes, including WAL updates; access or query errors fall back to AppleScript, while cancellation and timeout errors are returned.
-- Writes use AppleScript against Calendar.app.
+- Writes use AppleScript against Calendar.app. Calendar names and event IDs are passed after an explicit option terminator so leading hyphens remain literal data.
 - Immediately after writes, Calendar's publication of changes to its occurrence cache can lag briefly; SQLite change detection does not force that refresh.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.
 - `status`/`doctor` include machine-friendly `degraded_reason_codes` metadata when checks degrade.
