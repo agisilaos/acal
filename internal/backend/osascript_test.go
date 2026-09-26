@@ -33,7 +33,7 @@ func TestTrimOuterQuotes(t *testing.T) {
 }
 
 func TestSplitLines(t *testing.T) {
-	lines := splitLines("\"a\nb\"")
+	lines := splitLines("a\nb\n")
 	if len(lines) != 2 || lines[0] != "a" || lines[1] != "b" {
 		t.Fatalf("unexpected lines: %+v", lines)
 	}

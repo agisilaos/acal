@@ -44,7 +44,7 @@ func findCalendarDB() (string, error) {
 }
 
 func runAppleScript(ctx context.Context, lines []string, args ...string) (string, error) {
-	cmdArgs := []string{"-s", "s"}
+	cmdArgs := []string{"-s", "h"}
 	for _, line := range lines {
 		cmdArgs = append(cmdArgs, "-e", line)
 	}
@@ -145,18 +145,17 @@ func trimOuterQuotes(s string) string {
 	return s
 }
 
+// The runner emits raw text (-s h). Preserve tabs, including empty trailing
+// cells; trimming whitespace here can silently discard complete event rows.
 func splitLines(s string) []string {
-	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "\r\n")
 	if s == "" {
 		return nil
-	}
-	if strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"") && len(s) >= 2 {
-		s = s[1 : len(s)-1]
 	}
 	parts := strings.Split(s, "\n")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		v := strings.TrimSpace(p)
+		v := strings.TrimSuffix(p, "\r")
 		if v != "" {
 			out = append(out, v)
 		}

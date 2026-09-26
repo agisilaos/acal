@@ -251,3 +251,13 @@ func stubLookupAppleScript(t *testing.T, output string, fail bool) string {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return marker
 }
+
+func TestGetEventByIDFallbackWithEmptyOptionalFields(t *testing.T) {
+	start := time.Unix(cocoaEpochOffset+42, 0)
+	stubLookupAppleScript(t, fmt.Sprintf("uid\tcal\tWork\tquote \"literal\"\t%d\t%d\tfalse\t\t\t\n", start.Unix(), start.Add(time.Hour).Unix()), false)
+	b := NewOsaScriptBackend()
+	event, err := getEventByID(context.Background(), "uid@42", b.listEventsViaAppleScript)
+	if err != nil || event == nil || event.Title != `quote "literal"` || event.Location != "" || event.Notes != "" || event.URL != "" {
+		t.Fatalf("event=%+v error=%v", event, err)
+	}
+}

@@ -38,7 +38,8 @@ selection. Exact occurrence IDs couple a UID with its Cocoa-epoch start.
 
 Calendar enumeration and mutations use fixed AppleScript source with values passed
 as arguments. Both launchers put `--` between trusted interpreter options/source
-and data. This boundary must hold for every caller, including batch input and
+and data. Tabular reads request raw interpreter output and preserve empty trailing
+cells when splitting rows. This boundary must hold for every caller, including batch input and
 history replay. SQL literals and LIKE patterns have their own escaping in the read
 adapter; neither boundary should rely on a caller sanitizing event text.
 

@@ -41,3 +41,26 @@ func TestAppleScriptArgumentsRemainData(t *testing.T) {
 		})
 	}
 }
+
+// Exercise the actual osascript output mode, not a shell fixture that already
+// looks like decoded tabular output. This never opens or modifies Calendar.
+func TestAppleScriptTabularOutput(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("native AppleScript requires macOS")
+	}
+	t.Setenv("PATH", "/usr/bin:/bin")
+	row := "uid\tcal\tWork\tsay \"hello\" C:\\notes\t1791014400\t1791018000\tfalse\t\t\t"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := runAppleScript(ctx, []string{"on run argv", "return item 1 of argv", "end run"}, row+"\n"+row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := splitLines(out)
+	if len(rows) != 2 || rows[0] != row || rows[1] != row {
+		t.Fatalf("native rows changed: %#v", rows)
+	}
+	if got := len(strings.Split(rows[0], "\t")); got != 10 {
+		t.Fatalf("empty trailing fields lost: got %d cells", got)
+	}
+}
