@@ -18,6 +18,14 @@ func executeCommand(root *cobra.Command, args []string) error {
 }
 
 func classifyUsageErrors(cmd *cobra.Command) {
+	// Every command declares its positional contract. Bare groups still show
+	// help, but must validate unknown subcommands before doing so.
+	if cmd.Args == nil {
+		cmd.Args = cobra.NoArgs
+	}
+	if !cmd.Runnable() && cmd.HasSubCommands() {
+		cmd.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+	}
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return Wrap(2, err)
 	})

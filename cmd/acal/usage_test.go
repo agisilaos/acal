@@ -18,6 +18,10 @@ func TestUsageExitContract(t *testing.T) {
 	}
 	cases := [][]string{
 		{"nonsense"},
+		{"events", "nonsense"}, {"history", "nonsense"}, {"queries", "nonsense"}, {"view", "nonsense"}, {"calendars", "nonsense"},
+		{"status", "nonsense"}, {"setup", "extra"}, {"doctor", "extra"}, {"version", "extra"},
+		{"events", "add", "--calendar", "Work", "--title", "Preview", "--start", "2026-10-01T09:00Z", "--duration", "1h", "--dry-run", "extra"},
+		{"queries", "list", "extra"}, {"history", "list", "extra"},
 		{"events", "show"},
 		{"events", "show", "one", "two"},
 		{"history", "list", "--limit", "abc"},
@@ -63,7 +67,7 @@ func TestUsageExitContract(t *testing.T) {
 			})
 		}
 	}
-	for _, args := range [][]string{{"--help"}, {"help", "events"}, {"version"}, {"completion", "bash"}, {"__complete", "events", ""}} {
+	for _, args := range [][]string{{"events"}, {"queries"}, {"history"}, {"calendars"}, {"view"}, {"--help"}, {"help", "events"}, {"version"}, {"completion", "bash"}, {"__complete", "events", ""}} {
 		cmd := exec.Command(binary, args...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, out)

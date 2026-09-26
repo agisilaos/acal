@@ -102,6 +102,7 @@ Recommended automation patterns:
 
 - Deterministic reads:
   - `acal events query --from today --to +7d --where 'title~standup' --sort start --order asc --json`
+- Unknown subcommands and unexpected positional arguments exit `2` before command execution. Bare command groups still display help.
 - Safe writes preview:
   - `acal events add ... --dry-run --json`
   - `acal events batch --file ops.jsonl --dry-run --strict --json`

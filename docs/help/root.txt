@@ -1,6 +1,7 @@
 Query and manage Apple Calendar from terminal workflows and agents
 
 Usage:
+  acal [flags]
   acal [command]
 
 Available Commands:
