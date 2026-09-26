@@ -212,6 +212,16 @@ minus one second.
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+ICS import supports independent events only. VEVENT entries containing `RRULE`,
+`RDATE`, `EXDATE`, or `RECURRENCE-ID` are skipped with warnings rather than
+flattened into one-off appointments. `--strict` rejects a file with any parser
+warnings before creating any events, including otherwise valid entries. Use
+`--dry-run --json` to inspect importable events and warnings.
+
+ICS export writes the occurrences returned for `--from`/`--to` (and `--limit`,
+when set) as separate VEVENT entries. It does not reconstruct recurrence rules
+or exceptions, so exporting and importing is not a recurrence-preserving round trip.
+
 Query execution validates every `--where` clause before listing events, including
 when the result would be empty or an earlier clause would exclude every event.
 Setup and date-range errors retain precedence. Clause syntax is checked first,
