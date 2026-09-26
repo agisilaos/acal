@@ -155,7 +155,8 @@ func TestQueryErrors(t *testing.T) {
 			{name: "range", invalidRange: true, directHint: "Use valid --from/--to values", savedHint: "Saved query has invalid range; re-save it", code: contract.ErrInvalidUsage, exit: 2},
 			{name: "parse", where: "badclause", directHint: `Use clauses like title~"walk" or calendar=="Work"`, savedHint: "Saved query has invalid predicates; re-save it", code: contract.ErrInvalidUsage, exit: 2},
 			{name: "apply", where: "unknown==x", directHint: "Check --where field/operator/value", savedHint: "Saved query predicates failed; re-save it", code: contract.ErrInvalidUsage, exit: 2},
-			{name: "backend precedes parse", where: "badclause", backendErr: errors.New("backend unavailable"), directHint: "Run `acal doctor` for remediation", code: contract.ErrBackendUnavailable, exit: 6},
+			{name: "parse precedes backend", where: "badclause", backendErr: errors.New("backend unavailable"), directHint: `Use clauses like title~"walk" or calendar=="Work"`, savedHint: "Saved query has invalid predicates; re-save it", code: contract.ErrInvalidUsage, exit: 2},
+			{name: "backend", backendErr: errors.New("backend unavailable"), directHint: "Run `acal doctor` for remediation", code: contract.ErrBackendUnavailable, exit: 6},
 			{name: "timeout", backendErr: context.DeadlineExceeded, directHint: "Retry with a higher --timeout or run `acal doctor` for remediation", kind: "timeout", code: contract.ErrBackendUnavailable, exit: 6},
 			{name: "canceled", backendErr: context.Canceled, directHint: "Retry command; operation was canceled", kind: "canceled", code: contract.ErrBackendUnavailable, exit: 6},
 		} {
@@ -184,8 +185,8 @@ func TestQueryErrors(t *testing.T) {
 				if tc.kind != "" && (got.Meta["kind"] != tc.kind || got.Meta["phase"] != "backend.list_events") {
 					t.Fatalf("missing backend classification: %s", out)
 				}
-				if tc.invalidRange && b.calls != 0 {
-					t.Fatalf("backend called for invalid range")
+				if tc.code == contract.ErrInvalidUsage && b.calls != 0 {
+					t.Fatalf("backend called for invalid query")
 				}
 			})
 		}

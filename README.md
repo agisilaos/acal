@@ -199,6 +199,12 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+Query execution validates every `--where` clause before listing events, including
+when the result would be empty or an earlier clause would exclude every event.
+Setup and date-range errors retain precedence. Clause syntax is checked first,
+then fields, operators, and values are validated in clause order. Saved queries
+keep their raw clauses and are validated when run, not when saved.
+
 `events query` and `queries run` apply predicates and sorting before the result limit.
 A positive limit returns at most that many matches; zero or a negative limit returns all matches.
 These commands fetch the complete selected date/calendar range, so a small result limit does not reduce scan work or memory use. Narrow the range or calendars for large datasets.
