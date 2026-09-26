@@ -5,7 +5,9 @@
   "meta": {
     "count": 0,
     "events_scanned": 2,
-    "include_all_day": false
+    "include_all_day": false,
+    "max_conflicts": 1000,
+    "truncated": false
   },
   "schema_version": "v1",
   "warnings": null
