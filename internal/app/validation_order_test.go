@@ -165,3 +165,21 @@ func TestDSTGapRejectedBeforeCreation(t *testing.T) {
 		}
 	}
 }
+
+func TestQuickAddInvalidDurationDoesNotWrite(t *testing.T) {
+	orig := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return &strictNoCallBackend{}, nil }
+	t.Cleanup(func() { backendFactory = orig })
+	for _, prefix := range [][]string{{"quick-add"}, {"events", "quick-add"}} {
+		for _, duration := range []string{"0m", "-30m"} {
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append(append([]string{}, prefix...), "2026-10-01 09:00 Review @Work "+duration, "--json"))
+			if code := ExitCode(cmd.Execute()); code != 2 || !strings.Contains(out.String(), "duration must be positive") || strings.Contains(out.String(), unexpectedBackendCall) {
+				t.Fatalf("exit=%d output=%s", code, &out)
+			}
+		}
+	}
+}

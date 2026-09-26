@@ -359,3 +359,15 @@ func TestQuickAddStructuredOutputSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestQuickAddNonpositiveInlineDuration(t *testing.T) {
+	for _, duration := range []string{"0m", "-30m", "0h 30m", "-1h 1h"} {
+		if _, err := parseQuickAddInput("2026-10-01 09:00 Review @Work "+duration, time.Now(), time.UTC, "", time.Hour, false); err == nil {
+			t.Fatalf("accepted %q", duration)
+		}
+	}
+	in, err := parseQuickAddInput("2026-10-01 09:00 Review 0 milestones @Work 30m", time.Now(), time.UTC, "", time.Hour, false)
+	if err != nil || in.Title != "Review 0 milestones" || in.End.Sub(in.Start) != 30*time.Minute {
+		t.Fatalf("valid input: %+v err=%v", in, err)
+	}
+}

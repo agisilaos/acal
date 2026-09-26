@@ -115,6 +115,9 @@ func parseQuickAddInput(input string, now time.Time, loc *time.Location, default
 			}
 		}
 		if d, ok := parseQuickAddDuration(tok); ok {
+			if d <= 0 {
+				return backend.EventCreateInput{}, fmt.Errorf("duration must be positive: %s", tok)
+			}
 			duration = d
 			continue
 		}
@@ -198,7 +201,7 @@ func parseQuickAddDuration(token string) (time.Duration, bool) {
 		return 0, false
 	}
 	d, err := time.ParseDuration(token)
-	if err != nil || d <= 0 {
+	if err != nil || token == "0" || token == "+0" || token == "-0" {
 		return 0, false
 	}
 	return d, true

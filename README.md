@@ -120,6 +120,7 @@ Recommended automation patterns:
   - Ordinary and batch updates calculate duration from the supplied start, or read the existing start when omitted. End-only updates also read the existing start to validate ordering; read failures stop these updates, including previews.
   - Field-only previews and previews with all required timing values supplied do not read the event unless a sequence check is requested.
   - Update history uses a snapshot taken before writing. If that read fails, an ordinary update can proceed without history when neither timing nor sequence validation needs it; batch updates require the snapshot. These reads do not make updates atomic against concurrent external changes, and previously recorded incorrect history is not repaired.
+- Quick-add inline durations must be positive: `0m` and `-30m` are errors, not title text. Ordinary numeric title words such as `0` remain literal.
 - Local date-times in a daylight-saving gap are rejected instead of silently shifted. Choose a valid wall time or provide an explicit RFC3339 offset; this also applies to quick-add.
 - `--if-match-seq` on update, move, delete, and remind checks the supplied nonnegative sequence, including zero. Omitting it disables the check. Delete previews skip the lookup and do not verify the sequence.
 - Update results and uncertain outcomes:
