@@ -24,7 +24,7 @@ Available Commands:
   week        List events for a week
 
 Flags:
-      --backend string          Backend: osascript|eventkit (default "osascript")
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
       --config string           Config file path
       --fail-on-degraded        Fail if backend health is degraded
       --fields string           Projected fields, comma-separated

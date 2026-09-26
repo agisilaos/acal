@@ -19,6 +19,22 @@ acal version
 
 Use the implemented command set below and the examples section for common flows.
 
+The supported backend is `osascript` (the default). The `eventkit` backend is
+not implemented; selecting `--backend eventkit` fails for backend commands.
+
+Run `acal setup --json` or `acal status --json` for health checks and permission
+guidance. A ready result does not verify write access. Preview parsed event
+details without writing:
+
+```bash
+acal quick-add "tomorrow 10:00 Test @Personal 30m" --dry-run --json
+```
+
+This preview does not check that Personal exists or is writable. To verify write
+access, choose an existing writable calendar, create a disposable event without
+`--dry-run`, confirm it in Calendar, then delete it. That verification changes
+Calendar data.
+
 ## Implemented
 
 - `doctor`

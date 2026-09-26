@@ -73,7 +73,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&opts.FailOnDegraded, "fail-on-degraded", false, "Fail if backend health is degraded")
 	root.PersistentFlags().StringVar(&opts.Profile, "profile", "default", "Config profile")
 	root.PersistentFlags().StringVar(&opts.Config, "config", "", "Config file path")
-	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript|eventkit")
+	root.PersistentFlags().StringVar(&opts.Backend, "backend", "osascript", "Backend: osascript (eventkit is not implemented)")
 	root.PersistentFlags().StringVar(&opts.TZ, "tz", "", "IANA timezone for output")
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version")
