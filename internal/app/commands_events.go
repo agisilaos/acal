@@ -31,9 +31,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		SameCalendarOnly bool      `json:"same_calendar_only"`
 	}
 
-	buildConflictRows := func(items []contract.Event, includeAllDay bool) []conflictRow {
+	buildConflictRows := func(items []contract.Event, includeAllDay bool, maxConflicts int) ([]conflictRow, bool) {
 		if len(items) < 2 {
-			return nil
+			return nil, false
 		}
 		eventsCopy := make([]contract.Event, 0, len(items))
 		for _, it := range items {
@@ -43,7 +43,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			eventsCopy = append(eventsCopy, it)
 		}
 		if len(eventsCopy) < 2 {
-			return nil
+			return nil, false
 		}
 		sort.Slice(eventsCopy, func(i, j int) bool {
 			if eventsCopy[i].Start.Equal(eventsCopy[j].Start) {
@@ -66,6 +66,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				if !overlapStart.Before(overlapEnd) {
 					continue
 				}
+				// Only mark truncation once an additional overlap is found. Stop
+				// before retaining it so dense inputs cannot accumulate O(n^2) rows.
+				if len(rows) == maxConflicts {
+					return rows, true
+				}
 				leftCal := firstNonEmpty(eventsCopy[i].CalendarName, eventsCopy[i].CalendarID)
 				rightCal := firstNonEmpty(eventsCopy[j].CalendarName, eventsCopy[j].CalendarID)
 				rows = append(rows, conflictRow{
@@ -82,7 +87,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				})
 			}
 		}
-		return rows
+		return rows, false
 	}
 
 	var listCalendars []string
@@ -212,7 +217,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 
 	var conflictsCalendars []string
 	var conflictsFrom, conflictsTo string
-	var conflictsLimit int
+	const defaultMaxConflicts = 1000
+	const maxConflictsLimit = 10000
+	var conflictsLimit, conflictsMax int
 	var conflictsIncludeAllDay bool
 	conflicts := &cobra.Command{
 		Use:   "conflicts",
@@ -221,6 +228,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			p, be, ro, err := buildContext(cmd, opts, "events.conflicts")
 			if err != nil {
 				return err
+			}
+			if conflictsMax < 1 || conflictsMax > maxConflictsLimit {
+				err := fmt.Errorf("--max-conflicts must be between 1 and %d", maxConflictsLimit)
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Narrow --from/--to or --calendar to inspect more conflicts", 2)
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
@@ -232,19 +243,31 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			rows := buildConflictRows(items, conflictsIncludeAllDay)
+			rows, truncated := buildConflictRows(items, conflictsIncludeAllDay, conflictsMax)
 			meta := map[string]any{
 				"count":           len(rows),
 				"events_scanned":  len(items),
 				"include_all_day": conflictsIncludeAllDay,
+				"max_conflicts":   conflictsMax,
+				"truncated":       truncated,
 			}
-			return successWithMeta(ctx, p, ro, rows, meta, nil)
+			var warnings []string
+			if truncated {
+				warning := fmt.Sprintf("Conflict output truncated at --max-conflicts=%d; narrow --from/--to or --calendar", conflictsMax)
+				warnings = append(warnings, warning)
+				// Plain and JSONL output have no envelope for metadata or warnings.
+				if p.EffectiveSuccessMode() != output.ModeJSON {
+					_, _ = fmt.Fprintf(p.Err, "acal: %s\n", warning)
+				}
+			}
+			return successWithMeta(ctx, p, ro, rows, meta, warnings)
 		},
 	}
 	conflicts.Flags().StringSliceVar(&conflictsCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
 	conflicts.Flags().StringVar(&conflictsFrom, "from", "today", "Range start")
 	conflicts.Flags().StringVar(&conflictsTo, "to", "+30d", "Range end")
 	conflicts.Flags().IntVar(&conflictsLimit, "limit", 0, "Limit scanned events before conflict analysis")
+	conflicts.Flags().IntVar(&conflictsMax, "max-conflicts", defaultMaxConflicts, fmt.Sprintf("Maximum conflict pairs to return (1-%d); warn if truncated", maxConflictsLimit))
 	conflicts.Flags().BoolVar(&conflictsIncludeAllDay, "include-all-day", false, "Include all-day events in overlap detection")
 
 	var addCalendar, addTitle, addStart, addEnd, addDuration, addLocation, addNotes, addNotesFile, addURL, addRepeat string

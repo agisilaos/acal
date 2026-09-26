@@ -202,6 +202,7 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 
 ## Notes
 
+- `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - SQLite reads run in-process via `database/sql` (`modernc.org/sqlite`) with read-only immutable mode and per-path connection reuse to reduce lock waits and subprocess/open overhead.
 - Writes use AppleScript against Calendar.app.
