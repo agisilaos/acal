@@ -233,6 +233,7 @@ Equal sort keys retain their fetched order in either direction; tie order can di
     - JSONL schema: same as `history.jsonl`.
   - `queries.json`: saved query aliases.
     - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
+- History and redo contain full event snapshots. On macOS, accessing them restricts the `acal` config directory to `0700` and each accessed snapshot file to `0600`, including existing storage and history dry runs. Shared parent directories are unchanged.
 - Delete safety model:
   - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
   - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.
