@@ -17,6 +17,7 @@ const (
 	queryFetch queryStage = iota
 	queryParse
 	queryApply
+	querySort
 )
 
 type queryError struct {
@@ -36,6 +37,9 @@ func executeQuery(ctx context.Context, be backend.Backend, filter backend.EventF
 	matchers, err := compilePredicates(preds)
 	if err != nil {
 		return nil, &queryError{stage: queryApply, err: err}
+	}
+	if err := validateQuerySort(sortField, order); err != nil {
+		return nil, &queryError{stage: querySort, err: err}
 	}
 	limit := filter.Limit
 	filter.Limit = 0
@@ -177,6 +181,20 @@ func matchesAll(e contract.Event, matchers []eventMatcher) bool {
 		}
 	}
 	return true
+}
+
+func validateQuerySort(sortField, order string) error {
+	switch strings.ToLower(sortField) {
+	case "start", "end", "title", "updated_at", "calendar":
+	default:
+		return fmt.Errorf("unsupported --sort: %q (use start|end|title|updated_at|calendar)", sortField)
+	}
+	switch strings.ToLower(order) {
+	case "asc", "desc":
+	default:
+		return fmt.Errorf("unsupported --order: %q (use asc|desc)", order)
+	}
+	return nil
 }
 
 func sortEvents(items []contract.Event, sortField, order string) {

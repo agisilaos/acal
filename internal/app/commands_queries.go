@@ -105,8 +105,8 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 	save.Flags().StringVar(&saveFrom, "from", "today", "Range start")
 	save.Flags().StringVar(&saveTo, "to", "+30d", "Range end")
 	save.Flags().StringSliceVar(&saveCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
-	save.Flags().StringSliceVar(&saveWheres, "where", nil, "Predicate clause (repeatable)")
-	save.Flags().StringVar(&saveSort, "sort", "start", "Sort field")
+	save.Flags().StringArrayVar(&saveWheres, "where", nil, "One literal predicate clause (repeatable; no comma splitting)")
+	save.Flags().StringVar(&saveSort, "sort", "start", "Sort field: start|end|title|updated_at|calendar")
 	save.Flags().StringVar(&saveOrder, "order", "asc", "Sort order: asc|desc")
 	save.Flags().IntVar(&saveLimit, "limit", 0, "Limit results")
 	save.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite existing preset")
@@ -178,6 +178,13 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query has invalid range; re-save it", 2)
 			}
+			// Older presets may omit sort and order; preserve their start/asc defaults.
+			if q.Sort == "" {
+				q.Sort = "start"
+			}
+			if q.Order == "" {
+				q.Order = "asc"
+			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			items, queryErr := executeQuery(ctx, be, f, q.Wheres, q.Sort, q.Order)
@@ -185,6 +192,8 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 				switch queryErr.stage {
 				case queryParse:
 					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Saved query has invalid predicates; re-save it", 2)
+				case querySort:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Saved query has invalid sorting; re-save it", 2)
 				case queryApply:
 					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Saved query predicates failed; re-save it", 2)
 				default:

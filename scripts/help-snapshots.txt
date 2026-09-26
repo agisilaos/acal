@@ -1,2 +1,4 @@
 # output_file<TAB>command args
 root.txt	--help
+events-query.txt	events query --help
+queries-save.txt	queries save --help

@@ -193,6 +193,8 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				switch queryErr.stage {
 				case queryParse:
 					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
+				case querySort:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Check --sort and --order", 2)
 				case queryApply:
 					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Check --where field/operator/value", 2)
 				default:
@@ -205,7 +207,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	query.Flags().StringSliceVar(&queryCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
 	query.Flags().StringVar(&queryFrom, "from", "today", "Range start")
 	query.Flags().StringVar(&queryTo, "to", "+30d", "Range end")
-	query.Flags().StringSliceVar(&wheres, "where", nil, "Predicate clause (repeatable)")
+	query.Flags().StringArrayVar(&wheres, "where", nil, "One literal predicate clause (repeatable; no comma splitting)")
 	query.Flags().StringVar(&sortField, "sort", "start", "Sort field: start|end|title|updated_at|calendar")
 	query.Flags().StringVar(&order, "order", "asc", "Sort order: asc|desc")
 	query.Flags().IntVar(&queryLimit, "limit", 0, "Limit results")
