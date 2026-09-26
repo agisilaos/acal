@@ -218,6 +218,48 @@ minus one second.
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+### Batch JSONL schema
+
+`events batch` reads one JSON object per nonblank line. Only these keys are
+recognized; string fields accept JSON strings and `all_day` accepts a boolean:
+
+| Operation (`op`) | Required fields | Optional fields used by the operation |
+| --- | --- | --- |
+| `add` | `calendar`, `title`, `start`, and either `end` or `duration` | `location`, `notes`, `url`, `all_day` |
+| `update` | `id` | `title`, `start`, `end`, `duration`, `location`, `notes`, `url`, `all_day`, `scope` |
+| `delete` | `id` | `scope` |
+
+`start` and `end` use the CLI datetime syntax and `--tz`; `duration` is a positive
+Go duration such as `30m` or `1h`. If both `end` and `duration` are supplied, `end`
+takes precedence. Update duration uses the supplied start or reads the existing
+start, including in dry runs. `scope` accepts `auto` (default), `this`, `future`, or `series`.
+Optional null values act like omitted values. Known keys unused by an operation
+retain their existing ignored behavior.
+
+Unknown keys (including `repeat`, misspellings, and producer metadata) now fail
+that row before it executes, with the field name in the row error and exit status
+1. Producers that previously attached extra keys must remove them or keep their
+metadata outside the batch input. Do not remove `repeat` expecting recurrence to
+survive: batch does not create or change recurrence rules; use the dedicated
+`events add` or `events update` command for recurrence.
+
+Rows execute in order. By default, processing continues after errors;
+`--strict` or `--continue-on-error=false` stops at the first failed row. This is
+not whole-file preflight or a transaction: earlier successful writes remain.
+Preview the file first with `--dry-run --strict --json`.
+
+For example, save these rows as `ops.jsonl` (replace the sample IDs before writing):
+
+```jsonl
+{"op":"add","calendar":"Work","title":"Batch","start":"2026-10-01T09:00","duration":"30m","location":"Room 4A","notes":"Planning","url":"https://example.com","all_day":false}
+{"op":"update","id":"sample-event-id","title":"Revised","scope":"this"}
+{"op":"delete","id":"sample-event-id","scope":"this"}
+```
+
+```bash
+./acal events batch --file ./ops.jsonl --dry-run --strict --json
+```
+
 ICS import supports independent events only. VEVENT entries containing `RRULE`,
 `RDATE`, `EXDATE`, or `RECURRENCE-ID` are skipped with warnings rather than
 flattened into one-off appointments. `--strict` rejects a file with any parser
