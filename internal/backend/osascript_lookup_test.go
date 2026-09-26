@@ -74,7 +74,7 @@ func TestGetEventByIDUsesBoundedWindowAndExactMatch(t *testing.T) {
 				if to == zeroUnix {
 					to++
 				}
-				if f.From.IsZero() || f.To.IsZero() || f.From.Unix() != from || f.To.Unix() != to || f.Limit != 0 {
+				if f.From.IsZero() || f.To.IsZero() || f.From.Unix() != from || f.To.Unix() != to || f.Limit != 0 || f.Overlap {
 					t.Fatalf("unexpected filter: %+v", f)
 				}
 				return []contract.Event{

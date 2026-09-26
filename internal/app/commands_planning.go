@@ -41,11 +41,12 @@ func newFreebusyCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
+			f.Overlap = true
 			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			blocks := buildBusyBlocks(items, includeAllDay)
+			blocks := buildBusyBlocks(clipEventsToRange(items, f.From, f.To), includeAllDay)
 			minutes := int64(0)
 			for _, b := range blocks {
 				minutes += b.Minutes
@@ -102,11 +103,12 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
+			f.Overlap = true
 			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			blocks := buildBusyBlocks(items, includeAllDay)
+			blocks := buildBusyBlocks(clipEventsToRange(items, f.From, f.To), includeAllDay)
 			slots := buildSlots(blocks, f.From, f.To, startHour, startMinute, endHour, endMinute, dur, step)
 			return successWithMeta(ctx, p, ro, slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
 		},
@@ -120,6 +122,20 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit events scanned")
 	cmd.Flags().BoolVar(&includeAllDay, "include-all-day", false, "Include all-day events as busy")
 	return cmd
+}
+
+// clipEventsToRange copies event values so planning never changes source identities
+// or the original slice used to report events_scanned.
+func clipEventsToRange(items []contract.Event, from, to time.Time) []contract.Event {
+	clipped := make([]contract.Event, 0, len(items))
+	for _, item := range items {
+		item.Start = maxTime(item.Start, from)
+		item.End = minTime(item.End, to)
+		if item.Start.Before(item.End) {
+			clipped = append(clipped, item)
+		}
+	}
+	return clipped
 }
 
 func buildBusyBlocks(items []contract.Event, includeAllDay bool) []busyBlock {

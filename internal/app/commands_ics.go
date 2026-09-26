@@ -21,6 +21,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export events to ICS",
+		Long:  "Export occurrences in the selected range as separate VEVENT entries. Recurrence rules and exceptions are not reconstructed.",
 		RunE: func(c *cobra.Command, _ []string) error {
 			p, be, ro, err := buildContext(c, opts, "events.export")
 			if err != nil {
@@ -66,6 +67,7 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import events from ICS",
+		Long:  "Import independent events from ICS. Entries containing RRULE, RDATE, EXDATE, or RECURRENCE-ID are skipped with warnings. Use --strict to reject warnings before any writes.",
 		RunE: func(c *cobra.Command, _ []string) error {
 			p, be, ro, err := buildContext(c, opts, "events.import")
 			if err != nil {
@@ -85,7 +87,11 @@ func newEventsImportCmd(opts *globalOptions) *cobra.Command {
 			}
 			items, warnings := parseICS(raw, calendar, resolveLocation(ro.TZ))
 			if len(items) == 0 {
-				return failWithHint(p, contract.ErrInvalidUsage, errors.New("no importable VEVENT entries"), "Validate ICS content and DTSTART/DTEND fields", 2)
+				hint := "Validate ICS content and DTSTART/DTEND fields"
+				if len(warnings) > 0 {
+					hint += "; " + strings.Join(warnings, "; ")
+				}
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("no importable VEVENT entries"), hint, 2)
 			}
 			if strict && len(warnings) > 0 {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("strict import rejected warnings"), "Fix ICS warnings or omit --strict", 2)
@@ -174,7 +180,10 @@ func readICSInput(path string) (string, error) {
 }
 
 func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateInput, []string) {
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	// Unfold content lines before recognizing property names and parameters.
+	raw = strings.ReplaceAll(raw, "\r\n", "\n")
+	raw = strings.NewReplacer("\n ", "", "\n\t", "").Replace(raw)
+	lines := strings.Split(raw, "\n")
 	inEvent := false
 	kv := map[string]string{}
 	items := make([]backend.EventCreateInput, 0)
@@ -182,6 +191,12 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 	flush := func() {
 		if !inEvent {
 			return
+		}
+		for _, property := range []string{"RRULE", "RDATE", "EXDATE", "RECURRENCE-ID"} {
+			if _, present := kv[property]; present {
+				warnings = append(warnings, "skipped VEVENT with unsupported recurrence property "+property)
+				return
+			}
 		}
 		title := strings.TrimSpace(kv["SUMMARY"])
 		if title == "" {

@@ -2,9 +2,15 @@ package app
 
 import (
 	"bytes"
+	"errors"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agis/acal/internal/backend"
+	"github.com/agis/acal/internal/contract"
 )
 
 func TestParseQuickAddInputBasic(t *testing.T) {
@@ -123,5 +129,87 @@ func TestParseQuickAddInputAcrossDST(t *testing.T) {
 				t.Fatalf("allDay=%t duration=%s, want %t and %s", in.AllDay, in.End.Sub(in.Start), tc.allDay, tc.duration)
 			}
 		})
+	}
+}
+
+func TestQuickAddHistoryAcrossAliasesAndModes(t *testing.T) {
+	for _, alias := range []string{"quick-add", "events quick-add"} {
+		for _, mode := range []string{"--plain", "--json", "--jsonl"} {
+			for _, scenario := range []string{"success", "dry-run", "backend failure", "history failure"} {
+				t.Run(alias+"/"+mode+"/"+scenario, func(t *testing.T) {
+					t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+					seed := []historyEntry{{Type: "add", EventID: "prior-event", Created: &contract.Event{ID: "prior-event"}}}
+					if err := writeRedoHistory(seed); err != nil {
+						t.Fatal(err)
+					}
+					if scenario == "history failure" {
+						// A directory at the history path deterministically prevents appending.
+						if err := os.Mkdir(historyFilePath(), 0o700); err != nil {
+							t.Fatal(err)
+						}
+					}
+					fb := &scopeCaptureBackend{}
+					if scenario == "backend failure" {
+						fb.addErr = errors.New("add failed")
+					}
+					originalFactory := backendFactory
+					backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+					t.Cleanup(func() { backendFactory = originalFactory })
+					cmd := NewRootCommand()
+					var out bytes.Buffer
+					cmd.SetOut(&out)
+					cmd.SetErr(&bytes.Buffer{})
+					args := append(strings.Fields(alias), "2026-10-01 10:00 Standup @Work 30m", mode, "--tz", "UTC")
+					if scenario == "dry-run" {
+						args = append(args, "--dry-run")
+					}
+					cmd.SetArgs(args)
+					err := cmd.Execute()
+					if scenario == "backend failure" {
+						if err == nil || err.Error() != fb.addErr.Error() || ExitCode(err) != 1 {
+							t.Fatalf("got %v, want backend failure", err)
+						}
+					} else if err != nil {
+						t.Fatalf("quick-add failed: %v", err)
+					}
+					wantCalls := 1
+					if scenario == "dry-run" {
+						wantCalls = 0
+					}
+					if fb.addCalls != wantCalls {
+						t.Fatalf("add calls = %d, want %d", fb.addCalls, wantCalls)
+					}
+					if scenario == "success" || scenario == "history failure" {
+						if !strings.Contains(out.String(), "new-evt@792417600") {
+							t.Fatalf("missing created event output: %q", out.String())
+						}
+					}
+					if scenario != "history failure" {
+						entries, err := readHistory()
+						if err != nil {
+							t.Fatal(err)
+						}
+						if scenario == "success" {
+							if len(entries) != 1 || entries[0].Type != "add" || entries[0].EventID != "new-evt@792417600" || entries[0].Created == nil || *entries[0].Created != (contract.Event{ID: "new-evt@792417600"}) {
+								t.Fatalf("expected exactly one created-event snapshot, got %+v", entries)
+							}
+						} else if len(entries) != 0 {
+							t.Fatalf("unexpected history: %+v", entries)
+						}
+					}
+					redo, err := readRedoHistory()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if scenario == "success" {
+						if len(redo) != 0 {
+							t.Fatalf("redo not invalidated: %+v", redo)
+						}
+					} else if !reflect.DeepEqual(redo, seed) {
+						t.Fatalf("redo changed: got %+v, want %+v", redo, seed)
+					}
+				})
+			}
+		}
 	}
 }

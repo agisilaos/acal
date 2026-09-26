@@ -209,6 +209,101 @@ func TestEventsImportStrictRejectsWarnings(t *testing.T) {
 	}
 }
 
+func TestParseICSRejectsRecurrenceProperties(t *testing.T) {
+	for _, property := range []string{
+		"RRULE:FREQ=WEEKLY", "RDATE:20260227T090000Z",
+		"EXDATE:20260227T090000Z", "RECURRENCE-ID:20260220T090000Z",
+		"rdate;VALUE=DATE:20260227", "exdate;TZID=Europe/Berlin:20260227T090000",
+		"recurrence-id;RANGE=THISANDFUTURE:20260220T090000Z", "RRULE:",
+		"RECURRENCE-ID;\r\n RANGE=THISANDFUTURE:20260220T090000Z",
+		"EXDATE;\n\tVALUE=DATE:20260227",
+	} {
+		t.Run(property, func(t *testing.T) {
+			raw := "BEGIN:VEVENT\nSUMMARY:Series\nDTSTART:20260220T090000Z\nDTEND:20260220T100000Z\n" + property + "\nEND:VEVENT\n"
+			items, warnings := parseICS(raw, "Work", time.UTC)
+			name := strings.ToUpper(strings.SplitN(strings.SplitN(property, ":", 2)[0], ";", 2)[0])
+			if len(items) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0], "unsupported recurrence property "+name) {
+				t.Fatalf("expected recurrence warning and no events, got items=%+v warnings=%v", items, warnings)
+			}
+		})
+	}
+}
+
+func TestEventsImportRecurrenceBoundary(t *testing.T) {
+	const independent = "BEGIN:VEVENT\nSUMMARY:Independent\nDTSTART:20260220T090000Z\nDTEND:20260220T100000Z\nEND:VEVENT\n"
+	const recurring = "BEGIN:VEVENT\nSUMMARY:Series\nDTSTART:20260220T090000Z\nDTEND:20260220T100000Z\nRRULE:FREQ=WEEKLY\nEND:VEVENT\n"
+	for _, tc := range []struct {
+		name      string
+		events    string
+		flags     []string
+		wantCalls int
+		wantCode  int
+	}{
+		{"mixed", independent + recurring + independent, nil, 2, 0},
+		{"strict", independent + recurring, []string{"--strict"}, 0, 2},
+		{"strict-folded", independent + strings.ReplaceAll(recurring, "RRULE:FREQ=WEEKLY", "RECURRENCE-ID;\r\n RANGE=THISANDFUTURE:20260220T090000Z"), []string{"--strict"}, 0, 2},
+		{"dry-run", recurring + independent, []string{"--dry-run"}, 0, 0},
+		{"recurrence-only", recurring, nil, 0, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &scopeCaptureBackend{}
+			origFactory := backendFactory
+			backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+			t.Cleanup(func() { backendFactory = origFactory })
+			path := filepath.Join(t.TempDir(), "recurrence.ics")
+			if err := os.WriteFile(path, []byte("BEGIN:VCALENDAR\n"+tc.events+"END:VCALENDAR\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := NewRootCommand()
+			var stdout bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stdout)
+			cmd.SetArgs(append([]string{"events", "import", "--file", path, "--calendar", "Work", "--json"}, tc.flags...))
+			err := cmd.Execute()
+			if ExitCode(err) != tc.wantCode || fb.addCalls != tc.wantCalls {
+				t.Fatalf("err=%v calls=%d; want code=%d calls=%d", err, fb.addCalls, tc.wantCode, tc.wantCalls)
+			}
+			if tc.wantCalls > 0 && (fb.addInput.Title != "Independent" || fb.addInput.RepeatRule != "") {
+				t.Fatalf("unexpected imported event: %+v", fb.addInput)
+			}
+			if tc.wantCode == 0 {
+				var got struct {
+					Warnings []string `json:"warnings"`
+				}
+				if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "RRULE") {
+					t.Fatalf("missing recurrence warning: %s", stdout.String())
+				}
+			} else if tc.name == "recurrence-only" && !strings.Contains(stdout.String(), "RRULE") {
+				t.Fatalf("missing recurrence diagnostic: %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestBuildICSExportsSeparateOccurrences(t *testing.T) {
+	start := time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC)
+	items := []contract.Event{
+		{ID: "series/first", Title: "Weekly", Start: start, End: start.Add(time.Hour)},
+		{ID: "series/second", Title: "Weekly", Start: start.AddDate(0, 0, 7), End: start.AddDate(0, 0, 7).Add(time.Hour)},
+	}
+	raw := buildICS(items)
+	if strings.Count(raw, "BEGIN:VEVENT") != 2 || strings.Count(raw, "END:VEVENT") != 2 {
+		t.Fatalf("expected separate occurrences: %s", raw)
+	}
+	parsed, warnings := parseICS(raw, "Work", time.UTC)
+	if len(parsed) != 2 || len(warnings) != 0 {
+		t.Fatalf("expected independent events: items=%+v warnings=%v", parsed, warnings)
+	}
+	for i, event := range parsed {
+		if !event.Start.Equal(items[i].Start) || !event.End.Equal(items[i].End) || event.RepeatRule != "" {
+			t.Fatalf("occurrence %d changed: %+v", i, event)
+		}
+	}
+}
+
 func TestICSDateParameters(t *testing.T) {
 	berlin, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
