@@ -8,6 +8,7 @@ type ErrorCode string
 
 const (
 	ErrGeneric            ErrorCode = "GENERIC_FAILURE"
+	ErrUnsupported        ErrorCode = "UNSUPPORTED_OPERATION"
 	ErrUpdateUnverified   ErrorCode = "UPDATE_APPLIED_UNVERIFIED"
 	ErrUpdateUnknown      ErrorCode = "UPDATE_OUTCOME_UNKNOWN"
 	ErrInvalidUsage       ErrorCode = "INVALID_USAGE"

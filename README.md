@@ -25,12 +25,18 @@ The supported backend is `osascript` (the default). The `eventkit` backend is
 not implemented; selecting `--backend eventkit` fails for backend commands.
 
 Run `acal setup --json` or `acal status --json` for health checks and permission
-guidance. A ready result does not verify write access. Changing display alarms
-(including reminders on creation and reminder undo/redo) additionally requires
-**Full Access** for the invoking terminal/app under System Settings → Privacy &
-Security → Calendars. The osascript backend uses EventKit for those alarm changes
-because Calendar's AppleScript alarm-deletion handler can fail. Permission is
-checked before mutation; acal does not request it automatically.
+guidance. A ready result does not verify write access. Editing or deleting an
+existing event (including reminders and history replay) requires **Full Access**
+for the invoking terminal/app under System Settings → Privacy & Security →
+Calendars. acal uses EventKit to verify that the target is independent before
+writing. Creating an independent event requires this additional access only when
+setting a reminder. Permission is checked before mutation; acal does not request
+it automatically.
+
+**Recurring-event writes are unsupported in v0.3.0.** Creating a series, adding
+recurrence, or modifying/deleting a series or detached occurrence is rejected
+before mutation. Use Calendar.app for these operations. Recurring reads retain
+their existing limitations. [Full support is planned](https://github.com/agisilaos/acal/issues/35).
 
 Preview parsed event details without writing:
 
@@ -137,7 +143,8 @@ Recommended automation patterns:
   - Native updates read the complete mutable event fields directly from the object changed by Calendar, preserving notes, URL, and whitespace. They do not use the occurrence cache to construct the result. The returned occurrence ID follows the resulting start time; undo/redo follows returned IDs after moves.
   - A completed write without a verified result exits `1` with `UPDATE_APPLIED_UNVERIFIED` and metadata `applied: true`, `verified: false`. Transport failures or timeouts with uncertain completion exit `1` with `UPDATE_OUTCOME_UNKNOWN`, `verified: false`, and no `applied` assertion. Batch rows expose the corresponding `meta.kind` (`update_applied_unverified` or `update_outcome_unknown`) and inspection hint.
   - Inspect Calendar before retrying an uncertain update, move, reminder, batch row, or undo/redo. These outcomes do not append snapshots or advance history/redo stacks, even though Calendar may have changed. Native update scripts are never automatically retried, including when `ACAL_OSASCRIPT_RETRIES` is configured.
-  - Series/future writes return the first native target actually changed as a representative only. This does not verify every occurrence or guarantee full-series undo. Native timestamps are converted independently of the local epoch; ambiguous DST-fold dates produce an unverified outcome. Native date setters and occurrence targeting use Foundation conversions instead of local-epoch arithmetic. AppleScript still cannot reliably distinguish both instants in a repeated DST hour; recurrence limitations remain.
+  - Recurring writes are rejected before mutation. Native date setters still preserve absolute instants; ambiguous DST-fold dates produce an unverified outcome.
+  - Pre-write rejection includes `meta.kind: write_rejected`, `meta.applied: false`, and a reason. `UNSUPPORTED_OPERATION` exits `2` for recurrence or unclassified historical recreation; `PERMISSION_DENIED` exits `6` for missing Full Access; unresolved/ambiguous native identity exits `6` with `BACKEND_UNAVAILABLE`. These are not uncertain-write outcomes. A rejected action leaves history and redo unchanged. For batch commands this applies to the rejected row; earlier successful rows remain applied.
   - Automated checks use fixtures/stubs and a Calendar-free AppleScript serialization check. Native Calendar round-trip guarantees require a separately authorized disposable-calendar integration run.
 - Reminder offsets must be exact whole minutes; fractional-minute values (such as `30s` or `90s`) are rejected before Calendar reads or writes. `events remind --at` requires a nonzero duration and treats either sign as before the event. Native writes and history replay preserve signed whole minutes, including zero for an alarm at the event start.
 - Reminder previews (`acal events remind <id> --at -15m --dry-run --json` or `acal events remind <id> --clear --dry-run --json`) read the event but do not update its display alarm or write history/redo. Preview data includes `dry_run: true` in JSON, JSONL, and plain output; JSON metadata also includes `dry_run: true` and `verified: false`. Clear requests include `meta.clear_requested: true`. The legacy v1 `meta.cleared: true` field is retained for compatibility and identifies the requested operation, not proof of completion; only `meta.verified: true` confirms a read-back-verified clear.
@@ -148,9 +155,9 @@ Exit codes:
 
 - `0`: success
 - `1`: runtime/processing failure
-- `2`: invalid usage or validation failure (including unknown commands, unknown flags, invalid flag values, and positional argument validation)
+- `2`: invalid usage, validation failure, or an unsupported operation
 - `4`: resource not found
-- `6`: backend unavailable
+- `6`: backend unavailable or required Calendar access missing
 - `7`: concurrency conflict (sequence mismatch)
 
 Parser errors leave stdout empty and write diagnostics to stderr. With `--json` or
@@ -464,26 +471,22 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
   - `history list`, `history undo`, and `history redo` expose the same entry fields in JSON / JSONL; the JSON envelope remains `schema_version: "v1"`.
   - Reminder undo/redo changes only the display-alarm offset and verifies it by reading it back. `events remind` reads the prior offset before mutation and aborts if that read fails. An update or verification failure creates no new reminder history; failed undo/redo verification leaves the stacks unchanged, although Calendar may already have changed. History write failures retain their existing handling.
   - Reminder snapshots cover only the first display alarm (or none). Set/clear and replay replace all display alarms; additional display alarms cannot be restored. Other alarm types are not captured or changed by these operations.
-  - Existing add/update/delete history and redo entries remain readable with their original replay behavior. Older generic reminder updates have no recoverable alarm snapshot and cannot be repaired retrospectively; no notes-marker migration is performed.
-  - Downgrade limitation: older acal binaries reject reminder entries during undo/redo, and can discard their snapshot fields when rewriting a stack for another operation. Do not use an older binary against these history files if reminder recovery is needed.
+  - New history entries record `independent: true` after successful guarded writes. Legacy entries remain readable, but undo-delete and redo-add cannot recreate a snapshot without that classification: the original recurrence structure is unknown, so both stacks remain unchanged. Successful guarded replay of a live target establishes independent status for subsequent replay. Older generic reminder updates have no recoverable alarm snapshot and cannot be repaired retrospectively; no notes-marker migration is performed.
+  - Downgrade limitation: older acal binaries reject reminder entries during undo/redo, and can discard their snapshot fields when rewriting a stack for another operation. Older binaries also drop the new independence classification when rewriting entries, which can block later recreation in v0.3.0. Do not use an older binary against these history files if recovery is needed.
   - `queries.json`: saved query aliases. Concurrent saves and deletes are serialized using `queries.json.lock`; updates replace the store atomically so readers see a complete snapshot. A missing, empty, or JSON `null` store is treated as empty; malformed JSON is reported without overwriting it.
     - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
 - History and redo contain full event snapshots. On macOS, accessing them restricts the `acal` config directory to `0700` and each accessed snapshot file to `0600`, including existing storage and history dry runs. Shared parent directories are unchanged.
 - Delete safety model:
   - interactive TTY: prompts for exact event ID unless `--force` or `--confirm` is supplied.
   - non-interactive or `--no-input`: requires `--force` or exact `--confirm <event-id>`.
-- Recurring write scope:
-  - `--scope auto`: if ID is `<uid>@<occurrence>`, targets one occurrence; otherwise targets full series.
-  - `--scope this`: target one occurrence (requires occurrence-style ID).
-  - `--scope future`: target this and following occurrences (requires occurrence-style ID).
-  - `--scope series`: target the full series.
-  - Calendar's AppleScript interface may expose only the series anchor. On the tested macOS 27.2 host, targeting a later generated occurrence with `--scope future` returned `event not found` before mutation. Later-occurrence targeting remains a [known limitation](https://github.com/agisilaos/acal/issues/34); the alarm bridge does not change it.
-- Repeat rule grammar (`events add|update --repeat`):
+- Write scope flags remain accepted for compatibility, but no scope bypasses the recurring-event restriction. `auto` resolves an occurrence-style ID to `this`; `this` and `future` require an occurrence-style ID. Independent events remain writable after classification.
+- Recurring-series anchors, generated occurrences, and detached occurrences are rejected. Missing or ambiguous native classification also stops before mutation. The check runs again inside the write script; it is not an atomic transaction against concurrent external Calendar edits.
+- Repeat rule grammar (`events add|update --repeat`, preview only; writes are unsupported):
   - `daily*<count>`
   - `weekly:<day[,day...]>*<count>` where day is `mon|tue|wed|thu|fri|sat|sun`
   - `monthly*<count>`
   - `yearly*<count>`
-  - Count must be `1..366`.
+  - Count must be `1..366`. A dry run previews input; it does not authorize or certify a later write. Delete/history previews may skip native target checks.
 - History pagination:
   - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`; zero or negative limits also use `10`).
   - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`. Negative offsets are usage errors (exit `2`).

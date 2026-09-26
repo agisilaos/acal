@@ -3,7 +3,9 @@
 acal is a local macOS CLI running with the invoking user's filesystem and Calendar
 permissions. It has no server, service account, or network API. The implemented
 backend is `osascript`, with an EventKit bridge for display-alarm changes; the
-standalone `eventkit` backend selection currently returns an error.
+standalone `eventkit` backend selection currently returns an error. Domain terms
+live in [CONTEXT.md](../CONTEXT.md); the v0.3.0 recurrence restriction is recorded
+in [ADR 0001](adr/0001-restrict-recurring-writes-for-v0.3.0.md).
 The [README](../README.md) owns command syntax and output contracts; this document
 maps the implementation and the boundaries that changes need to preserve.
 
@@ -52,11 +54,20 @@ It changes only display alarms, saves the existing event using the requested
 occurrence/future span, and verifies alarm values after refresh. No new helper
 executable, runtime compiler, or automatic permission request is needed.
 
+Existing-event updates and deletes first require Full Calendar Access and a unique
+EventKit identity. Events with recurrence rules or detached status are rejected;
+unknown identity/classification also rejects before mutation. Commands perform a
+preliminary check before snapshot lookup, and native write scripts repeat the
+check immediately before their mutation phase. Rejections use a typed
+WriteRejectedError with `applied: false`; they are distinct from uncertain writes.
+New recurring creation and adding recurrence are rejected without native access.
+The checks do not make concurrent external Calendar changes transactional.
+
 Native updates read results from the object changed by Calendar. They distinguish
 verified results, applied-but-unverified results, and unknown completion. Updates
-are never automatically retried. Representative series results do not verify every
-occurrence. Sequence checks and pre-write snapshots are separate reads, not atomic
-transactions against external Calendar changes. Import and batch apply sequentially;
+are never automatically retried. Recurring writes are unsupported in this release.
+Sequence checks and pre-write snapshots are separate reads, not atomic transactions
+against external Calendar changes. Import and batch apply sequentially;
 earlier successful operations remain when later operations fail. A dry run only
 controls that invocation and does not bind a later apply to the same file contents.
 
@@ -74,6 +85,12 @@ directory and is therefore a lower-trust input when running in another project.
 History, redo, and saved queries derive their directory independently from
 `defaultUserConfigPath`: `$XDG_CONFIG_HOME/acal`, otherwise `$HOME/.config/acal`.
 Changing `--config`, `ACAL_CONFIG`, or a profile does not isolate these stores.
+New history records mark successful guarded writes as independent. Legacy
+snapshots lack recurrence classification, so recreation through undo-delete or
+redo-add is rejected without moving either stack; live-target replay is still
+subject to native classification. A successful guarded live-target replay can
+establish independent status for its next replay.
+
 History and redo contain full event snapshots and are mutable replay stacks;
 access restricts the acal directory to `0700` and accessed snapshot files to `0600`.
 This protects ordinary local-account separation, not against an actor controlling
@@ -112,7 +129,6 @@ ACAL_CALENDAR_INTEGRATION=1 go test ./internal/backend -run '^TestNativeReminder
 
 It requires Calendar Automation permission and full Calendar access. It covers
 clear/replacement, signed and zero offsets, event identity/fields, and recurrence
-save spans from the first occurrence. It does not qualify targeting later
-generated occurrences; Calendar can report those as not found before the alarm
-bridge runs. Routine CI skips these live mutations; in-memory EventKit alarm tests run
+rejection of series anchors, later generated occurrences, and detached occurrences
+without changing their native data. Routine CI skips these live mutations; in-memory EventKit alarm tests run
 on macOS without saving to a calendar.

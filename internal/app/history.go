@@ -20,6 +20,8 @@ type reminderSnapshot struct {
 }
 
 type historyEntry struct {
+	// Only newly recorded successful writes prove recreation is independent.
+	Independent    bool              `json:"independent,omitempty"`
 	At             time.Time         `json:"at"`
 	Type           string            `json:"type"`
 	TxID           string            `json:"tx_id,omitempty"`
@@ -130,6 +132,7 @@ func writeHistoryFile(path string, data []byte) error {
 }
 
 func appendHistory(entry historyEntry) error {
+	entry.Independent = true
 	path := historyFilePath()
 	if path == "" {
 		return nil
@@ -365,6 +368,9 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, err
 		}
 	case "delete":
+		if !last.Independent {
+			return historyEntry{}, nil, &backend.WriteRejectedError{Reason: "legacy_history"}
+		}
 		if last.Deleted == nil {
 			return historyEntry{}, nil, fmt.Errorf("invalid delete history entry")
 		}
@@ -409,6 +415,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	if err := writeHistory(entries[:len(entries)-1]); err != nil {
 		return historyEntry{}, nil, err
 	}
+	redoEntry.Independent = true
 	redoEntry.At = time.Now().UTC()
 	redoEntries = append(redoEntries, redoEntry)
 	if err := writeRedoHistory(redoEntries); err != nil {
@@ -443,6 +450,9 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, err
 		}
 	case "add":
+		if !last.Independent {
+			return historyEntry{}, nil, &backend.WriteRejectedError{Reason: "legacy_history"}
+		}
 		if last.Created == nil {
 			return historyEntry{}, nil, fmt.Errorf("add redo requires created snapshot")
 		}
@@ -487,6 +497,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
 	}
+	applied.Independent = true
 	applied.At = time.Now().UTC()
 	historyEntries = append(historyEntries, applied)
 	if err := writeHistory(historyEntries); err != nil {

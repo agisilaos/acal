@@ -91,6 +91,10 @@ successful earlier rows. Use --dry-run to preview without writing.`,
 					result := map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()}
 					if meta := backendErrorMeta(execErr); meta != nil {
 						result["meta"] = meta
+						if meta["kind"] == "write_rejected" {
+							reason, _ := meta["reason"].(string)
+							result["hint"] = writeRejectionHint(reason)
+						}
 						var outcome *backend.UpdateOutcomeError
 						if errors.As(execErr, &outcome) {
 							result["hint"] = updateOutcomeHint
@@ -240,7 +244,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		}
 		var prev *contract.Event
 		if !dryRun || needsStart {
-			prev, err = getEventByIDWithTimeout(ctx, be, row.ID)
+			prev, err = getEventForWriteWithTimeout(ctx, be, row.ID, dryRun)
 			if err != nil {
 				return batchExecResult{}, fmt.Errorf("unable to snapshot event before update: %w", err)
 			}
@@ -279,7 +283,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		if dryRun {
 			return batchExecResult{View: map[string]any{"op": "delete", "id": row.ID, "scope": scope}}, nil
 		}
-		ev, err := getEventByIDWithTimeout(ctx, be, row.ID)
+		ev, err := getEventForWriteWithTimeout(ctx, be, row.ID, dryRun)
 		if err != nil {
 			return batchExecResult{}, fmt.Errorf("unable to snapshot event before delete: %w", err)
 		}

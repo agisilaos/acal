@@ -257,6 +257,20 @@ func getEventByIDWithTimeout(ctx context.Context, be backend.Backend, id string)
 	return v, err
 }
 
+// Native adapters may classify write targets before a read that would otherwise
+// hide an unsupported occurrence behind a generic not-found response. The actual
+// mutation also checks, so this preliminary check is not an authorization token.
+func getEventForWriteWithTimeout(ctx context.Context, be backend.Backend, id string, dryRun bool) (*contract.Event, error) {
+	if checker, ok := be.(interface {
+		CheckEventWrite(context.Context, string) error
+	}); ok && !dryRun {
+		if err := checker.CheckEventWrite(ctx, id); err != nil {
+			return nil, err
+		}
+	}
+	return getEventByIDWithTimeout(ctx, be, id)
+}
+
 func addEventWithTimeout(ctx context.Context, be backend.Backend, in backend.EventCreateInput) (*contract.Event, error) {
 	start := time.Now()
 	v, err := withTimeout(ctx, func() (*contract.Event, error) {

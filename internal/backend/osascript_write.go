@@ -18,6 +18,9 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		return nil, fmt.Errorf("invalid start/end")
 	}
 
+	if strings.TrimSpace(in.RepeatRule) != "" {
+		return nil, &WriteRejectedError{Reason: "recurring"}
+	}
 	allDay := boolToScript(in.AllDay)
 	startUnix := strconv.FormatInt(in.Start.Unix(), 10)
 	endUnix := strconv.FormatInt(in.End.Unix(), 10)
@@ -143,7 +146,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
 
-	lines := append(append(updateResultScriptHandlers(), alarmScriptHandlers()...), []string{
+	lines := append(append(append(updateResultScriptHandlers(), alarmScriptHandlers()...), writeGuardScriptHandlers()...), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
@@ -159,7 +162,8 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set repeatText to item 11 of argv`,
 		`set reminderText to item 12 of argv`,
 		`set clearReminderText to item 13 of argv`,
-		`if clearReminderText is "true" or reminderText is not "__ACAL_KEEP__" then my requireAlarmAccess()`,
+		`set rejection to my independentWriteCheck(uidText, occUnix)`,
+		`if rejection is not "" then return rejection`,
 		`tell application "Calendar"`,
 		`set representativeRef to missing value`,
 		`set representativeCal to missing value`,
@@ -239,6 +243,9 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 }
 
 func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventUpdateInput) (*contract.Event, error) {
+	if in.RepeatRule != nil && strings.TrimSpace(*in.RepeatRule) != "" {
+		return nil, &WriteRejectedError{Reason: "recurring"}
+	}
 	uid, occ := parseEventID(id)
 	if uid == "" {
 		return nil, fmt.Errorf("invalid event id")
@@ -255,6 +262,9 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	out, err := runUpdateAppleScript(ctx, lines, args...)
 	if err != nil {
 		return nil, &UpdateOutcomeError{Err: err}
+	}
+	if err := decodeWriteRejection(out); err != nil {
+		return nil, err
 	}
 	event, err := decodeUpdateResult(out, uid, occ, scope, in)
 	if err != nil {
@@ -276,12 +286,14 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	_, err = runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
+	out, err := runUpdateAppleScript(ctx, append(append(appleScriptDateHandlers(), writeGuardScriptHandlers()...), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
 		`set occUnix to item 3 of argv as integer`,
 		`set occurrenceDate to my nativeDate(occUnix)`,
+		`set rejection to my independentWriteCheck(uidText, occUnix)`,
+		`if rejection is not "" then return rejection`,
 		`tell application "Calendar"`,
 		`set foundAny to false`,
 		`repeat with c in calendars`,
@@ -318,6 +330,9 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 		`end tell`,
 		`end run`,
 	}...), uid, string(resolvedScope), occUnix)
+	if err == nil {
+		return decodeWriteRejection(out)
+	}
 	return err
 }
 

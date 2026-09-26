@@ -8,6 +8,10 @@
 
 ## Planning
 
+- Domain glossary: [Calendar automation](../CONTEXT.md)
+- Recurrence release scope: [ADR 0001](adr/0001-restrict-recurring-writes-for-v0.3.0.md)
+- Full recurrence support: [#35](https://github.com/agisilaos/acal/issues/35)
+- CLI usability roadmap: [#36](https://github.com/agisilaos/acal/issues/36)
 - CLI expansion roadmap: `cli-expansion-roadmap.md`
 
 ## Release

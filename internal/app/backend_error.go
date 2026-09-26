@@ -68,6 +68,10 @@ func annotateBackendError(ctx context.Context, phase string, err error) error {
 }
 
 func backendErrorMeta(err error) map[string]any {
+	var rejected *backend.WriteRejectedError
+	if errors.As(err, &rejected) {
+		return map[string]any{"kind": "write_rejected", "reason": rejected.Reason, "applied": false}
+	}
 	var outcome *backend.UpdateOutcomeError
 	if errors.As(err, &outcome) {
 		meta := map[string]any{"phase": "backend.update_event", "kind": "update_outcome_unknown", "verified": false}
@@ -90,4 +94,18 @@ func backendErrorMeta(err error) map[string]any {
 		meta["deadline"] = be.Deadline.Format(time.RFC3339)
 	}
 	return meta
+}
+
+// Shared by single commands and per-row batch errors.
+func writeRejectionHint(reason string) string {
+	switch reason {
+	case "permission":
+		return "Enable Full Access for the invoking app in System Settings > Privacy & Security > Calendars, then retry."
+	case "unclassified":
+		return "Re-fetch the event ID and check Calendar access. acal could not establish a unique independent event; nothing was changed."
+	case "legacy_history":
+		return "Inspect the history entry and restore it manually in Calendar.app. acal cannot prove the old snapshot represents an independent event; both stacks are unchanged."
+	default:
+		return "Use Calendar.app for recurring-event changes; acal left the event and history unchanged."
+	}
 }
