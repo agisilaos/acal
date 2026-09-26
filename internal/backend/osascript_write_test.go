@@ -36,11 +36,14 @@ func TestBuildUpdateEventScriptStringValues(t *testing.T) {
 			empty := ""
 			var in EventUpdateInput
 			field.set(&in, &empty)
-			baseline, _ := buildUpdateEventScript("event-uid", 0, ScopeSeries, in)
+			baseline, _, _ := buildUpdateEventScript("event-uid", 0, ScopeSeries, in)
 			for _, value := range values {
 				t.Run(value.name, func(t *testing.T) {
 					field.set(&in, &value.value)
-					lines, args := buildUpdateEventScript("event-uid", 0, ScopeSeries, in)
+					lines, args, err := buildUpdateEventScript("event-uid", 0, ScopeSeries, in)
+					if err != nil {
+						t.Fatal(err)
+					}
 					if len(args) != 13 {
 						t.Fatalf("argv length = %d, want 13", len(args))
 					}
@@ -84,7 +87,10 @@ func TestBuildUpdateEventScriptFieldCombinations(t *testing.T) {
 			}
 		}
 		t.Run(strings.Join(name, "+"), func(t *testing.T) {
-			lines, args := buildUpdateEventScript("event-uid", start.Unix()-cocoaEpochOffset, ScopeFuture, in)
+			lines, args, err := buildUpdateEventScript("event-uid", start.Unix()-cocoaEpochOffset, ScopeFuture, in)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !reflect.DeepEqual(args, wantArgs) {
 				t.Errorf("argv = %#v, want %#v", args, wantArgs)
 			}
