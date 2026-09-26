@@ -98,12 +98,18 @@ func TestCompiledStringPredicates(t *testing.T) {
 		{"notes", contract.Event{Notes: "MiXeD Value"}},
 		{"id", contract.Event{ID: "MiXeD Value"}},
 	}
+	wantByOperator := map[string][3]bool{
+		"==": {true, false, false},
+		"!=": {false, true, true},
+		"~":  {true, true, false},
+	}
 	for _, field := range fields {
 		for _, op := range []string{"==", "!=", "~", ">", ">=", "<", "<="} {
 			t.Run(field.name+op, func(t *testing.T) {
+				want, supported := wantByOperator[op]
 				for i, value := range []string{"mixed VALUE", "XeD", "other"} {
 					matchers, err := compilePredicates([]predicate{{field: field.name, op: op, value: value}})
-					if op != "==" && op != "!=" && op != "~" {
+					if !supported {
 						if err == nil {
 							t.Fatal("expected unsupported string operator error")
 						}
@@ -112,9 +118,8 @@ func TestCompiledStringPredicates(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want := map[string][]bool{"==": {true, false, false}, "!=": {false, true, true}, "~": {true, true, false}}
-					if got := matchesAll(field.event, matchers); got != want[op][i] {
-						t.Fatalf("value %q: got %v, want %v", value, got, want[op][i])
+					if got := matchesAll(field.event, matchers); got != want[i] {
+						t.Fatalf("value %q: got %v, want %v", value, got, want[i])
 					}
 				}
 			})

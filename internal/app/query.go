@@ -108,11 +108,11 @@ func compileTimePredicate(field func(contract.Event) time.Time, p predicate) (ev
 	case ">":
 		return func(e contract.Event) bool { return field(e).After(expected) }, nil
 	case ">=":
-		return func(e contract.Event) bool { return field(e).After(expected) || field(e).Equal(expected) }, nil
+		return func(e contract.Event) bool { return !field(e).Before(expected) }, nil
 	case "<":
 		return func(e contract.Event) bool { return field(e).Before(expected) }, nil
 	case "<=":
-		return func(e contract.Event) bool { return field(e).Before(expected) || field(e).Equal(expected) }, nil
+		return func(e contract.Event) bool { return !field(e).After(expected) }, nil
 	default:
 		return nil, fmt.Errorf("operator %s not supported for time fields", p.op)
 	}
