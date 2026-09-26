@@ -207,7 +207,7 @@ build_archive() {
 
   rm -f "$bin_path"
   GOOS=darwin GOARCH="$arch" CGO_ENABLED=0 "${build_cmd[@]}"
-  tar -C "$tmp_dir" -czf "$archive_path" "$CLI_NAME" LICENSE
+  COPYFILE_DISABLE=1 tar -C "$tmp_dir" -czf "$archive_path" "$CLI_NAME" LICENSE
 }
 
 build_archive amd64
