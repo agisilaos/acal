@@ -275,5 +275,6 @@ Equal sort keys retain their fetched order in either direction; tie order can di
   - `yearly*<count>`
   - Count must be `1..366`.
 - History pagination:
-  - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`).
-  - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`.
+  - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`; zero or negative limits also use `10`).
+  - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`. Negative offsets are usage errors (exit `2`).
+  - Pagination metadata reports the effective limit and offset; offsets beyond the stored history return an empty page.

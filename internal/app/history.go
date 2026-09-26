@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -191,7 +192,7 @@ func readHistoryEntries(path string) ([]historyEntry, error) {
 
 func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
 	if limit <= 0 {
-		limit = 10
+		return nil, false, fmt.Errorf("limit must be > 0")
 	}
 	if offset < 0 {
 		return nil, false, fmt.Errorf("offset must be >= 0")
@@ -217,8 +218,12 @@ func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
 		return nil, false, nil
 	}
 
-	need := limit + offset + 1
-	desc := make([]historyEntry, 0, need)
+	// Saturate the lookahead count when the requested page exceeds int range.
+	need := math.MaxInt
+	if limit < math.MaxInt-offset {
+		need = offset + limit + 1
+	}
+	var desc []historyEntry
 	pos := info.Size()
 	remainder := ""
 	buf := make([]byte, 8192)
@@ -264,9 +269,9 @@ func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
 	if len(desc) <= offset {
 		return nil, false, nil
 	}
-	end := offset + limit
-	if end > len(desc) {
-		end = len(desc)
+	end := len(desc)
+	if limit < len(desc)-offset {
+		end = offset + limit
 	}
 	slice := desc[offset:end]
 	out := make([]historyEntry, 0, len(slice))
