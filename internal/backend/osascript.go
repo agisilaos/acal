@@ -141,7 +141,24 @@ func (b *OsaScriptBackend) listEventsFromDB(ctx context.Context, dbPath string, 
 func buildListEventsQuery(fromCocoa, toCocoa int64, f EventFilter) string {
 	rangeClause := fmt.Sprintf("oc.occurrence_start_date >= %d AND oc.occurrence_start_date <= %d", fromCocoa, toCocoa)
 	if f.Overlap {
-		rangeClause = fmt.Sprintf("%d < %d AND oc.occurrence_start_date < %d AND oc.occurrence_end_date > %d", fromCocoa, toCocoa, toCocoa, fromCocoa)
+		startClause := fmt.Sprintf("oc.occurrence_start_date < %d", toCocoa)
+		endClause := fmt.Sprintf("oc.occurrence_end_date > %d", fromCocoa)
+		validRange := fromCocoa < toCocoa
+		if !f.From.IsZero() && !f.To.IsZero() {
+			// Subtract the whole-second bound before comparing its remainder:
+			// adding nanoseconds to a modern Cocoa timestamp loses float precision.
+			if ns := f.To.Nanosecond(); ns != 0 {
+				startClause = fmt.Sprintf("(oc.occurrence_start_date - %d) < 0.%09d", toCocoa, ns)
+			}
+			if ns := f.From.Nanosecond(); ns != 0 {
+				endClause = fmt.Sprintf("(oc.occurrence_end_date - %d) > 0.%09d", fromCocoa, ns)
+			}
+			validRange = f.From.Before(f.To)
+		}
+		rangeClause = "1=0"
+		if validRange {
+			rangeClause = startClause + " AND " + endClause
+		}
 	}
 	limitClause := ""
 	if f.Limit > 0 {
@@ -313,7 +330,13 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		rangePredicate = "start date < toDate and end date > fromDate"
 	}
 	fromUnix := strconv.FormatInt(f.From.Unix(), 10)
-	toUnix := strconv.FormatInt(f.To.Unix(), 10)
+	toSecond := f.To.Unix()
+	if f.Overlap && f.To.Nanosecond() != 0 {
+		// AppleScript dates have second precision. Fetch a superset, then
+		// apply the exact overlap bounds before sorting and limiting results.
+		toSecond++
+	}
+	toUnix := strconv.FormatInt(toSecond, 10)
 	out, err := runAppleScript(ctx, []string{
 		`on cleanText(v)`,
 		`set s to v as text`,
@@ -391,6 +414,9 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		}
 		start := time.Unix(startUnix, 0).In(f.From.Location())
 		end := time.Unix(endUnix, 0).In(f.From.Location())
+		if f.Overlap && (!start.Before(f.To) || !end.After(f.From)) {
+			continue
+		}
 		startCocoa := start.Unix() - cocoaEpochOffset
 		e := contract.Event{
 			ID:           fmt.Sprintf("%s@%d", strings.TrimSpace(parts[0]), startCocoa),
