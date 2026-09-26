@@ -1,6 +1,7 @@
 package timeparse
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,6 +74,30 @@ func TestParseDateTimeCalendarDaysAcrossDST(t *testing.T) {
 			}
 			if got.Format(time.RFC3339) != tc.want || got.Location() != loc {
 				t.Fatalf("got %s (%s), want %s in %s", got.Format(time.RFC3339), got.Location(), tc.want, loc)
+			}
+		})
+	}
+}
+
+func TestParseRejectsNonexistentWallTimes(t *testing.T) {
+	for _, tc := range []struct{ zone, gap, before, after, offset string }{
+		{"Europe/Berlin", "2026-03-29T02:30", "2026-03-29T01:30", "2026-03-29T03:30", "2026-03-29T02:30:00+01:00"},
+		{"America/New_York", "2026-03-08T02:30", "2026-03-08T01:30", "2026-03-08T03:30", "2026-03-08T02:30:00-05:00"},
+	} {
+		t.Run(tc.zone, func(t *testing.T) {
+			loc, err := time.LoadLocation(tc.zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, input := range []string{tc.gap, strings.ReplaceAll(tc.gap, "T", " ")} {
+				if _, err := ParseDateTime(input, time.Now(), loc); err == nil || !strings.Contains(err.Error(), "nonexistent local time") {
+					t.Fatalf("%s: %v", input, err)
+				}
+			}
+			for _, input := range []string{tc.before, tc.after, tc.offset} {
+				if _, err := ParseDateTime(input, time.Now(), loc); err != nil {
+					t.Fatalf("%s: %v", input, err)
+				}
 			}
 		})
 	}

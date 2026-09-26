@@ -139,3 +139,29 @@ func TestRemindInvalidOffsetFailsBeforeBackendLookup(t *testing.T) {
 		t.Fatalf("did not expect backend to be called: %q", got)
 	}
 }
+
+func TestDSTGapRejectedBeforeCreation(t *testing.T) {
+	orig := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return &strictNoCallBackend{}, nil }
+	t.Cleanup(func() { backendFactory = orig })
+	for _, args := range [][]string{
+		{"events", "add", "--calendar", "Work", "--title", "Gap", "--start", "2026-03-29T02:30", "--duration", "30m"},
+		{"quick-add", "2026-03-29 02:30 Gap @Work 30m"},
+		{"events", "quick-add", "2026-03-29 02:30 Gap @Work 30m"},
+	} {
+		for _, preview := range []bool{false, true} {
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			argv := append(append([]string{}, args...), "--tz", "Europe/Berlin", "--json")
+			if preview {
+				argv = append(argv, "--dry-run")
+			}
+			cmd.SetArgs(argv)
+			if code := ExitCode(cmd.Execute()); code != 2 || !strings.Contains(out.String(), "nonexistent local time") || strings.Contains(out.String(), unexpectedBackendCall) {
+				t.Fatalf("%v: code=%d output=%s", argv, code, &out)
+			}
+		}
+	}
+}

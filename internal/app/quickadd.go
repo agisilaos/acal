@@ -161,8 +161,8 @@ func parseQuickAddStart(tokens []string, now time.Time, loc *time.Location) (tim
 		if err != nil {
 			return time.Time{}, 0, false, err
 		}
-		start := time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, loc)
-		return start, 2, true, nil
+		start, err := timeparse.ParseDateTime(fmt.Sprintf("%sT%02d:%02d", day.Format("2006-01-02"), hour, minute), now, loc)
+		return start, 2, true, err
 	}
 	if len(tokens) >= 2 {
 		joined := tokens[0] + " " + tokens[1]

@@ -52,6 +52,12 @@ func ParseDateTime(input string, now time.Time, loc *time.Location) (time.Time, 
 	}
 	for _, layout := range layouts {
 		if ts, err := time.ParseInLocation(layout, input, loc); err == nil {
+			if layout != time.RFC3339 {
+				wall, _ := time.Parse(layout, input)
+				if ts.Format(layout) != wall.Format(layout) {
+					return time.Time{}, fmt.Errorf("nonexistent local time %q in %s; choose a valid time or supply an explicit RFC3339 offset", input, loc)
+				}
+			}
 			return ts, nil
 		}
 	}
