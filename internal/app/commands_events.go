@@ -183,18 +183,19 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := listEventsWithTimeout(ctx, be, f)
-			if err != nil {
-				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
-			}
 			preds, err := parsePredicates(wheres)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
 			}
-			items, err = applyPredicates(items, preds)
+			matchers, err := compilePredicates(preds)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check --where field/operator/value", 2)
 			}
+			items, err := listEventsWithTimeout(ctx, be, f)
+			if err != nil {
+				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
+			}
+			items = applyPredicates(items, matchers)
 			sortEvents(items, sortField, order)
 			if queryLimit > 0 && len(items) > queryLimit {
 				items = items[:queryLimit]

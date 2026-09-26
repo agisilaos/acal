@@ -180,18 +180,19 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
-			items, err := listEventsWithTimeout(ctx, be, f)
-			if err != nil {
-				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
-			}
 			preds, err := parsePredicates(q.Wheres)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query has invalid predicates; re-save it", 2)
 			}
-			items, err = applyPredicates(items, preds)
+			matchers, err := compilePredicates(preds)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Saved query predicates failed; re-save it", 2)
 			}
+			items, err := listEventsWithTimeout(ctx, be, f)
+			if err != nil {
+				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
+			}
+			items = applyPredicates(items, matchers)
 			sortEvents(items, q.Sort, q.Order)
 			if q.Limit > 0 && len(items) > q.Limit {
 				items = items[:q.Limit]

@@ -189,6 +189,12 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+Query execution validates every `--where` clause before listing events, including
+when the result would be empty or an earlier clause would exclude every event.
+Setup and date-range errors retain precedence. Clause syntax is checked first,
+then fields, operators, and values are validated in clause order. Saved queries
+keep their raw clauses and are validated when run, not when saved.
+
 ## Docs
 
 - CLI roadmap and expansion plan: `docs/cli-expansion-roadmap.md`
