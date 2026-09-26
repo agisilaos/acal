@@ -18,7 +18,7 @@ import (
 
 func TestBuildICSContainsCalendarAndEvent(t *testing.T) {
 	items := []contract.Event{{ID: "e1", Title: "Standup", Start: time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC), End: time.Date(2026, 2, 20, 9, 30, 0, 0, time.UTC)}}
-	got := buildICS(items)
+	got := buildICS(items, time.UTC)
 	if !strings.Contains(got, "BEGIN:VCALENDAR") || !strings.Contains(got, "BEGIN:VEVENT") {
 		t.Fatalf("invalid ICS output: %q", got)
 	}
@@ -292,7 +292,7 @@ func TestBuildICSExportsSeparateOccurrences(t *testing.T) {
 		{ID: "series/first", Title: "Weekly", Start: start, End: start.Add(time.Hour)},
 		{ID: "series/second", Title: "Weekly", Start: start.AddDate(0, 0, 7), End: start.AddDate(0, 0, 7).Add(time.Hour)},
 	}
-	raw := buildICS(items)
+	raw := buildICS(items, time.UTC)
 	if strings.Count(raw, "BEGIN:VEVENT") != 2 || strings.Count(raw, "END:VEVENT") != 2 {
 		t.Fatalf("expected separate occurrences: %s", raw)
 	}
@@ -533,5 +533,55 @@ func TestImportRecordsAndReportsProgress(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestAllDayExportRoundTripInSelectedTimezone(t *testing.T) {
+	for _, zone := range []string{"Europe/Berlin", "Pacific/Kiritimati", "America/Los_Angeles"} {
+		t.Run(zone, func(t *testing.T) {
+			loc, err := time.LoadLocation(zone)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, date := range []string{"2026-10-01", "2026-03-29", "2026-03-08"} {
+				start, err := time.ParseInLocation("2006-01-02", date, loc)
+				if err != nil {
+					t.Fatal(err)
+				}
+				end := start.AddDate(0, 0, 1)
+				// Backend timestamps may be represented in a different location.
+				fb := &scopeCaptureBackend{events: []contract.Event{{ID: "all-day", Title: "Holiday", Start: start.UTC(), End: end.UTC(), AllDay: true}, {ID: "timed", Title: "Meeting", Start: start.Add(9 * time.Hour), End: start.Add(10 * time.Hour)}}}
+				orig := backendFactory
+				backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+				cmd := NewRootCommand()
+				var out bytes.Buffer
+				cmd.SetOut(&out)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs([]string{"events", "export", "--from", date, "--to", end.Format("2006-01-02"), "--tz", zone, "--json"})
+				err = cmd.Execute()
+				backendFactory = orig
+				if err != nil {
+					t.Fatal(err)
+				}
+				var env struct {
+					Data struct {
+						ICS string `json:"ics"`
+					}
+				}
+				if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+					t.Fatal(err)
+				}
+				imported, warnings := parseICS(env.Data.ICS, "Work", loc)
+				if len(warnings) != 0 || len(imported) != 2 {
+					t.Fatalf("parse: %+v %v", imported, warnings)
+				}
+				if !imported[0].AllDay || !imported[0].Start.Equal(start) || !imported[0].End.Equal(end) {
+					t.Fatalf("shifted dates: %+v", imported[0])
+				}
+				if !imported[1].Start.Equal(fb.events[1].Start) || !imported[1].End.Equal(fb.events[1].End) {
+					t.Fatal("timed instants changed")
+				}
+			}
+		})
 	}
 }

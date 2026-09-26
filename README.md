@@ -353,7 +353,7 @@ Imports write events one at a time and record each confirmed creation in undo hi
 
 ICS export writes the occurrences returned for `--from`/`--to` (and `--limit`,
 when set) as separate VEVENT entries. It does not reconstruct recurrence rules
-or exceptions, so exporting and importing is not a recurrence-preserving round trip.
+or exceptions, so exporting and importing is not a recurrence-preserving round trip. All-day dates use the selected `--tz` (system timezone by default), with an exclusive end date; timed events are exported as UTC instants. Use the same timezone when importing all-day dates to preserve that calendar-day view.
 
 Each `--where` argument is one literal `field operator value` clause. Repeat the
 flag to combine clauses with AND. Commas and embedded double quotes are passed

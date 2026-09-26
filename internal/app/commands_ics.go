@@ -37,7 +37,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			ics := buildICS(items)
+			ics := buildICS(items, ro.Location)
 			meta := map[string]any{"count": len(items)}
 			if strings.TrimSpace(outPath) != "" {
 				if err := os.WriteFile(outPath, []byte(ics), 0o644); err != nil {
@@ -142,7 +142,7 @@ func failImport(p output.Printer, err error, created []contract.Event, item int)
 	return WrapPrinted(exitCode, err)
 }
 
-func buildICS(items []contract.Event) string {
+func buildICS(items []contract.Event, loc *time.Location) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\r\n")
 	b.WriteString("VERSION:2.0\r\n")
@@ -158,8 +158,8 @@ func buildICS(items []contract.Event) string {
 		b.WriteString("UID:" + escapeICSText(uid) + "\r\n")
 		b.WriteString("DTSTAMP:" + now + "\r\n")
 		if e.AllDay {
-			b.WriteString("DTSTART;VALUE=DATE:" + e.Start.UTC().Format("20060102") + "\r\n")
-			b.WriteString("DTEND;VALUE=DATE:" + e.End.UTC().Format("20060102") + "\r\n")
+			b.WriteString("DTSTART;VALUE=DATE:" + e.Start.In(loc).Format("20060102") + "\r\n")
+			b.WriteString("DTEND;VALUE=DATE:" + e.End.In(loc).Format("20060102") + "\r\n")
 		} else {
 			b.WriteString("DTSTART:" + e.Start.UTC().Format("20060102T150405Z") + "\r\n")
 			b.WriteString("DTEND:" + e.End.UTC().Format("20060102T150405Z") + "\r\n")
