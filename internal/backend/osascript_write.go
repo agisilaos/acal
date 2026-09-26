@@ -26,7 +26,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	if err != nil {
 		return nil, err
 	}
-	out, err := runAppleScript(ctx, []string{
+	out, err := runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
 		`on run argv`,
 		`set calName to item 1 of argv`,
 		`set titleText to item 2 of argv`,
@@ -38,9 +38,8 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`set allDayText to item 8 of argv`,
 		`set repeatText to item 9 of argv`,
 		`set reminderText to item 10 of argv`,
-		`set epoch to date "1/1/1970 00:00:00"`,
-		`set startDate to (epoch + (startText as integer))`,
-		`set endDate to (epoch + (endText as integer))`,
+		`set startDate to (my nativeDate(startText as integer))`,
+		`set endDate to (my nativeDate(endText as integer))`,
 		`tell application "Calendar"`,
 		`set targetCal to missing value`,
 		`try`,
@@ -66,7 +65,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`return uid of newEvent as text`,
 		`end tell`,
 		`end run`,
-	}, in.Calendar, in.Title, startUnix, endUnix, in.Location, in.Notes, in.URL, allDay, repeatText, reminderMins)
+	}...), in.Calendar, in.Title, startUnix, endUnix, in.Location, in.Notes, in.URL, allDay, repeatText, reminderMins)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +148,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
 		`set occUnix to item 3 of argv as integer`,
+		`set occurrenceDate to my nativeDate(occUnix)`,
 		`set titleText to item 4 of argv`,
 		`set startText to item 5 of argv`,
 		`set endText to item 6 of argv`,
@@ -159,7 +159,6 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set repeatText to item 11 of argv`,
 		`set reminderText to item 12 of argv`,
 		`set clearReminderText to item 13 of argv`,
-		`set epoch to date "1/1/1970 00:00:00"`,
 		`tell application "Calendar"`,
 		`set representativeRef to missing value`,
 		`set representativeCal to missing value`,
@@ -174,13 +173,13 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`end try`,
 		`else if scopeText is "future" then`,
 		`try`,
-		`set targetEvents to every event of c whose uid is uidText and ((start date of it - epoch) as integer) is greater than or equal to occUnix`,
+		`set targetEvents to every event of c whose uid is uidText and start date is greater than or equal to occurrenceDate`,
 		`on error`,
 		`set targetEvents to {}`,
 		`end try`,
 		`else`,
 		`try`,
-		`set targetEvents to {first event of c whose uid is uidText and ((start date of it - epoch) as integer) is occUnix}`,
+		`set targetEvents to {first event of c whose uid is uidText and start date is occurrenceDate}`,
 		`on error`,
 		`set targetEvents to {}`,
 		`end try`,
@@ -192,8 +191,8 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 	}...)
 	lines = append(lines, stringSetters...)
 	lines = append(lines, []string{
-		`if startText is not "__ACAL_KEEP__" then set start date of targetRef to (epoch + (startText as integer))`,
-		`if endText is not "__ACAL_KEEP__" then set end date of targetRef to (epoch + (endText as integer))`,
+		`if startText is not "__ACAL_KEEP__" then set start date of targetRef to (my nativeDate(startText as integer))`,
+		`if endText is not "__ACAL_KEEP__" then set end date of targetRef to (my nativeDate(endText as integer))`,
 		`if allDayText is not "__ACAL_KEEP__" then`,
 		`if allDayText is "true" then`,
 		`set allday event of targetRef to true`,
@@ -278,12 +277,12 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	_, err = runAppleScript(ctx, []string{
+	_, err = runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
 		`set occUnix to item 3 of argv as integer`,
-		`set epoch to date "1/1/1970 00:00:00"`,
+		`set occurrenceDate to my nativeDate(occUnix)`,
 		`tell application "Calendar"`,
 		`set foundAny to false`,
 		`repeat with c in calendars`,
@@ -296,13 +295,13 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 		`end try`,
 		`else if scopeText is "future" then`,
 		`try`,
-		`set targetEvents to every event of c whose uid is uidText and ((start date of it - epoch) as integer) is greater than or equal to occUnix`,
+		`set targetEvents to every event of c whose uid is uidText and start date is greater than or equal to occurrenceDate`,
 		`on error`,
 		`set targetEvents to {}`,
 		`end try`,
 		`else`,
 		`try`,
-		`set targetEvents to {first event of c whose uid is uidText and ((start date of it - epoch) as integer) is occUnix}`,
+		`set targetEvents to {first event of c whose uid is uidText and start date is occurrenceDate}`,
 		`on error`,
 		`set targetEvents to {}`,
 		`end try`,
@@ -319,7 +318,7 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 		`return "ok"`,
 		`end tell`,
 		`end run`,
-	}, uid, string(resolvedScope), occUnix)
+	}...), uid, string(resolvedScope), occUnix)
 	return err
 }
 

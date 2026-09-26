@@ -163,8 +163,8 @@ func TestNativeDateConversionAppleScript(t *testing.T) {
 		`on run argv`,
 		`set outputValues to {}`,
 		`repeat with stamp in argv`,
-		`set nativeDate to (current application's NSDate's dateWithTimeIntervalSince1970:(stamp as real)) as date`,
-		`copy my unixSeconds(nativeDate) to end of outputValues`,
+		`set nativeValue to my nativeDate(stamp as integer)`,
+		`copy my unixSeconds(nativeValue) to end of outputValues`,
 		`end repeat`,
 		`return my resultJSON(outputValues)`,
 		`end run`)
@@ -172,8 +172,8 @@ func TestNativeDateConversionAppleScript(t *testing.T) {
 	for _, line := range lines {
 		args = append(args, "-e", line)
 	}
-	stamps := []string{"1768474800", "1784113200", "2209118400"}
-	out, err := exec.Command("/usr/bin/osascript", append(args, stamps...)...).CombinedOutput()
+	stamps := []string{"-86400", "0", "1768474800", "1784113200", "2209118400"}
+	out, err := exec.Command("/usr/bin/osascript", append(append(args, "--"), stamps...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}

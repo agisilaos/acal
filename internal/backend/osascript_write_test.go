@@ -96,7 +96,7 @@ func TestBuildUpdateEventScriptFieldCombinations(t *testing.T) {
 			}
 			script := strings.Join(lines, "\n")
 			before := "set targetRef to contents of targetEvent\n"
-			after := `if startText is not "__ACAL_KEEP__" then set start date of targetRef to (epoch + (startText as integer))`
+			after := `if startText is not "__ACAL_KEEP__" then set start date of targetRef to (my nativeDate(startText as integer))`
 			wantBlock := before
 			if len(wantSetters) > 0 {
 				wantBlock += strings.Join(wantSetters, "\n") + "\n"

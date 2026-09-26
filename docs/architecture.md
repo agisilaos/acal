@@ -21,7 +21,9 @@ maps the implementation and the boundaries that changes need to preserve.
 
 Commands resolve configuration and validate input before dispatching typed backend
 operations. The app owns snapshots and user-facing outcomes; the backend owns
-native targeting and result verification. Returned records flow through the output
+native targeting and result verification. Unix/native date conversion uses Foundation
+rather than arithmetic on a locale-parsed epoch; occurrence selection compares
+native dates. Repeated local times during a DST fold remain ambiguous in AppleScript. Returned records flow through the output
 package, with dedicated renderers for health, history, and ICS.
 
 ## Reads and writes

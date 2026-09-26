@@ -333,7 +333,7 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		toSecond++
 	}
 	toUnix := strconv.FormatInt(toSecond, 10)
-	out, err := runAppleScript(ctx, []string{
+	out, err := runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
 		`on cleanText(v)`,
 		`set s to v as text`,
 		`set AppleScript's text item delimiters to tab`,
@@ -354,9 +354,8 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		`on run argv`,
 		`set fromUnix to item 1 of argv as integer`,
 		`set toUnix to item 2 of argv as integer`,
-		`set epoch to date "1/1/1970 00:00:00"`,
-		`set fromDate to epoch + fromUnix`,
-		`set toDate to epoch + toUnix`,
+		`set fromDate to my nativeDate(fromUnix)`,
+		`set toDate to my nativeDate(toUnix)`,
 		`set rows to {}`,
 		`tell application "Calendar"`,
 		`repeat with c in calendars`,
@@ -372,8 +371,8 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		`set evUID to (uid of e as text)`,
 		`set evTitle to my cleanText(summary of e as text)`,
 		`set evEndDate to end date of e`,
-		`set evStartUnix to ((evStartDate - epoch) as integer)`,
-		`set evEndUnix to ((evEndDate - epoch) as integer)`,
+		`set evStartUnix to my unixSeconds(evStartDate)`,
+		`set evEndUnix to my unixSeconds(evEndDate)`,
 		`set evAllDay to (allday event of e as text)`,
 		`set evLoc to ""`,
 		`try`,
@@ -389,7 +388,7 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		`set AppleScript's text item delimiters to ""`,
 		`return joined`,
 		`end run`,
-	}, fromUnix, toUnix)
+	}...), fromUnix, toUnix)
 	if err != nil {
 		return nil, err
 	}

@@ -17,17 +17,17 @@ func (b *OsaScriptBackend) GetReminderOffset(ctx context.Context, id string) (*t
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	out, err := runAppleScript(ctx, []string{
+	out, err := runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set occUnix to item 2 of argv as integer`,
-		`set epoch to date "1/1/1970 00:00:00"`,
+		`set occurrenceDate to my nativeDate(occUnix)`,
 		`tell application "Calendar"`,
 		`repeat with c in calendars`,
 		`set targetEvent to missing value`,
 		`try`,
 		`if occUnix > 0 then`,
-		`set targetEvent to first event of c whose uid is uidText and ((start date of it - epoch) as integer) is occUnix`,
+		`set targetEvent to first event of c whose uid is uidText and start date is occurrenceDate`,
 		`else`,
 		`set targetEvent to first event of c whose uid is uidText`,
 		`end if`,
@@ -43,7 +43,7 @@ func (b *OsaScriptBackend) GetReminderOffset(ctx context.Context, id string) (*t
 		`error "event not found"`,
 		`end tell`,
 		`end run`,
-	}, uid, occUnix)
+	}...), uid, occUnix)
 	if err != nil {
 		return nil, err
 	}

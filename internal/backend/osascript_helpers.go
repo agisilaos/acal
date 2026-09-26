@@ -13,6 +13,23 @@ import (
 	"github.com/agis/acal/internal/contract"
 )
 
+// Foundation converts absolute Unix instants without locale-dependent date
+// parsing or arithmetic on a local civil-time epoch.
+func appleScriptDateHandlers() []string {
+	return []string{
+		`use framework "Foundation"`,
+		`use scripting additions`,
+		`on nativeDate(unixValue)`,
+		`return (current application's NSDate's dateWithTimeIntervalSince1970:unixValue) as date`,
+		`end nativeDate`,
+		`on unixSeconds(nativeValue)`,
+		`set instant to current application's NSDate's dateWithTimeInterval:0 sinceDate:nativeValue`,
+		`set secondsValue to current application's NSNumber's numberWithDouble:(instant's timeIntervalSince1970())`,
+		`return secondsValue's stringValue() as text`,
+		`end unixSeconds`,
+	}
+}
+
 func findCalendarDB() (string, error) {
 	candidates := []string{
 		filepath.Join(os.Getenv("HOME"), "Library/Group Containers/group.com.apple.calendar/Calendar.sqlitedb"),

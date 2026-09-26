@@ -29,14 +29,7 @@ func (e *UpdateOutcomeError) Unwrap() error { return e.Err }
 // Read the actual mutated reference in the write script, bypassing the lagging
 // occurrence cache. JSON preserves empty values, whitespace and control characters.
 func updateResultScriptHandlers() []string {
-	return []string{
-		`use framework "Foundation"`,
-		`use scripting additions`,
-		`on unixSeconds(nativeDate)`,
-		`set instant to current application's NSDate's dateWithTimeInterval:0 sinceDate:nativeDate`,
-		`set secondsValue to current application's NSNumber's numberWithDouble:(instant's timeIntervalSince1970())`,
-		`return secondsValue's stringValue() as text`,
-		`end unixSeconds`,
+	return append(appleScriptDateHandlers(), []string{
 		`on nativeTimezone()`,
 		`set tz to current application's NSTimeZone's |localTimeZone|()`,
 		`return tz's |name|() as text`,
@@ -50,7 +43,7 @@ func updateResultScriptHandlers() []string {
 		`if jsonData is missing value then error "Native result serialization failed"`,
 		`return (current application's NSString's alloc()'s initWithData:jsonData encoding:(current application's NSUTF8StringEncoding)) as text`,
 		`end resultJSON`,
-	}
+	}...)
 }
 
 func decodeUpdateResult(out, uid string, occurrence int64, scope RecurrenceScope, in EventUpdateInput) (*contract.Event, error) {
