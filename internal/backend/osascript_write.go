@@ -144,7 +144,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
 
-	lines := []string{
+	lines := append(updateResultScriptHandlers(), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
@@ -161,7 +161,8 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set clearReminderText to item 13 of argv`,
 		`set epoch to date "1/1/1970 00:00:00"`,
 		`tell application "Calendar"`,
-		`set updatedUID to uidText`,
+		`set representativeRef to missing value`,
+		`set representativeCal to missing value`,
 		`set foundAny to false`,
 		`repeat with c in calendars`,
 		`set targetEvents to {}`,
@@ -188,7 +189,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`set foundAny to true`,
 		`repeat with targetEvent in targetEvents`,
 		`set targetRef to contents of targetEvent`,
-	}
+	}...)
 	lines = append(lines, stringSetters...)
 	lines = append(lines, []string{
 		`if startText is not "__ACAL_KEEP__" then set start date of targetRef to (epoch + (startText as integer))`,
@@ -202,7 +203,7 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`end if`,
 		`if repeatText is not "__ACAL_KEEP__" then`,
 		`if repeatText is "" then`,
-		`set recurrence of targetRef to no recurrence`,
+		`set recurrence of targetRef to ""`,
 		`else`,
 		`if repeatText starts with "daily" then set recurrence of targetRef to daily`,
 		`if repeatText starts with "weekly" then set recurrence of targetRef to weekly`,
@@ -215,12 +216,24 @@ func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in Eve
 		`delete every display alarm of targetRef`,
 		`make new display alarm at end of display alarms of targetRef with properties {trigger interval:(reminderText as integer)}`,
 		`end if`,
+		`if representativeRef is missing value then`,
+		`set representativeRef to targetRef`,
+		`set representativeCal to c`,
+		`end if`,
 		`end repeat`,
 		`if scopeText is not "future" then exit repeat`,
 		`end if`,
 		`end repeat`,
 		`if foundAny is false then error "event not found"`,
-		`return updatedUID`,
+		`try`,
+		`set resultFields to {uid of representativeRef as text, name of representativeCal as text, name of representativeCal as text, my optionalText(summary of representativeRef), my unixSeconds(start date of representativeRef), my unixSeconds(end date of representativeRef), (allday event of representativeRef) as text, my optionalText(location of representativeRef), my optionalText(description of representativeRef), my optionalText(url of representativeRef), (sequence of representativeRef) as text, my unixSeconds(stamp date of representativeRef), my nativeTimezone()}`,
+		`try`,
+		`set item 2 of resultFields to calendarIdentifier of representativeCal as text`,
+		`end try`,
+		`return my resultJSON(resultFields)`,
+		`on error`,
+		`return "ACAL_APPLIED_UNVERIFIED"`,
+		`end try`,
 		`end tell`,
 		`end run`,
 	}...)
@@ -241,50 +254,15 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	if err != nil {
 		return nil, err
 	}
-	out, err := runAppleScript(ctx, lines, args...)
+	out, err := runUpdateAppleScript(ctx, lines, args...)
 	if err != nil {
-		return nil, err
+		return nil, &UpdateOutcomeError{Err: err}
 	}
-	updatedUID := strings.TrimSpace(trimOuterQuotes(strings.TrimSpace(out)))
-	if updatedUID == "" {
-		updatedUID = uid
-	}
-	// Refresh from read backend using date window around now.
-	now := time.Now()
-	items, err := b.ListEvents(ctx, EventFilter{From: now.AddDate(-3, 0, 0), To: now.AddDate(3, 0, 0)})
+	event, err := decodeUpdateResult(out, uid, occ, scope, in)
 	if err != nil {
-		return nil, err
+		return nil, &UpdateOutcomeError{Applied: true, Err: err}
 	}
-	for _, e := range items {
-		idUID, _ := parseEventID(e.ID)
-		if idUID == updatedUID {
-			cp := e
-			return &cp, nil
-		}
-	}
-	fallback := &contract.Event{ID: fmt.Sprintf("%s@%d", updatedUID, now.Unix()-cocoaEpochOffset)}
-	if in.Title != nil {
-		fallback.Title = *in.Title
-	}
-	if in.Location != nil {
-		fallback.Location = *in.Location
-	}
-	if in.Notes != nil {
-		fallback.Notes = *in.Notes
-	}
-	if in.URL != nil {
-		fallback.URL = *in.URL
-	}
-	if in.Start != nil {
-		fallback.Start = *in.Start
-	}
-	if in.End != nil {
-		fallback.End = *in.End
-	}
-	if in.AllDay != nil {
-		fallback.AllDay = *in.AllDay
-	}
-	return fallback, nil
+	return event, nil
 }
 
 func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope RecurrenceScope) error {

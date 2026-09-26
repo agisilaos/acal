@@ -258,6 +258,13 @@ func updateEventWithTimeout(ctx context.Context, be backend.Backend, id string, 
 	v, err := withTimeout(ctx, func() (*contract.Event, error) {
 		return be.UpdateEvent(ctx, id, in)
 	})
+	var outcome *backend.UpdateOutcomeError
+	if err != nil && !errors.As(err, &outcome) && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		err = &backend.UpdateOutcomeError{Err: err}
+	}
+	if err == nil && v == nil {
+		err = &backend.UpdateOutcomeError{Applied: true, Err: fmt.Errorf("backend returned no update snapshot")}
+	}
 	err = annotateBackendError(ctx, "backend.update_event", err)
 	recordTiming(ctx, "backend.update_event", time.Since(start))
 	return v, err

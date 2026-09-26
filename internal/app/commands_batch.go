@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -81,7 +82,15 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				execRes, execErr := executeBatchLine(ctx, be, row, loc, dryRun)
 				if execErr != nil {
 					errorsCount++
-					results = append(results, map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()})
+					result := map[string]any{"tx_id": txID, "op_id": opID, "line": i + 1, "op": row.Op, "ok": false, "error": execErr.Error()}
+					if meta := backendErrorMeta(execErr); meta != nil {
+						result["meta"] = meta
+						var outcome *backend.UpdateOutcomeError
+						if errors.As(execErr, &outcome) {
+							result["hint"] = updateOutcomeHint
+						}
+					}
+					results = append(results, result)
 					if !continueOnError {
 						break
 					}
@@ -236,7 +245,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 		}
 		return batchExecResult{
 			View:    map[string]any{"op": "update", "id": row.ID},
-			History: &historyEntry{Type: "update", EventID: row.ID, Prev: prev, Next: next},
+			History: &historyEntry{Type: "update", EventID: next.ID, Prev: prev, Next: next},
 		}, nil
 	case "delete":
 		if strings.TrimSpace(row.ID) == "" {

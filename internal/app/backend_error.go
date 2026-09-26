@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/agis/acal/internal/backend"
 )
 
 type backendContextError struct {
@@ -66,6 +68,16 @@ func annotateBackendError(ctx context.Context, phase string, err error) error {
 }
 
 func backendErrorMeta(err error) map[string]any {
+	var outcome *backend.UpdateOutcomeError
+	if errors.As(err, &outcome) {
+		meta := map[string]any{"phase": "backend.update_event", "kind": "update_outcome_unknown", "verified": false}
+		if outcome.Applied {
+			meta["kind"] = "update_applied_unverified"
+			meta["applied"] = true
+		}
+		return meta
+	}
+
 	var be *backendContextError
 	if !errors.As(err, &be) || be == nil {
 		return nil

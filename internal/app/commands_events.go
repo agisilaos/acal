@@ -458,7 +458,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
 			}
 			if current != nil {
-				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
+				_ = appendHistory(historyEntry{Type: "update", EventID: item.ID, Prev: current, Next: item})
 			}
 			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
@@ -556,7 +556,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Move failed", 1)
 			}
-			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})
+			_ = appendHistory(historyEntry{Type: "update", EventID: item.ID, Prev: current, Next: item})
 			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
 	}
@@ -772,17 +772,17 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			}
 			observed, verifyErr := reminderOffsetWithTimeout(ctx, be, args[0])
 			if verifyErr != nil {
-				return failWithHint(p, contract.ErrGeneric, verifyErr, "Reminder updated but verification failed; retry `acal events show <id>`", 1)
+				return failWithHint(p, contract.ErrGeneric, &backend.UpdateOutcomeError{Applied: true, Err: verifyErr}, updateOutcomeHint, 1)
 			}
 			if remindClear {
 				if observed != nil {
-					return failWithHint(p, contract.ErrGeneric, errors.New("reminder clear verification failed"), "Reminder still present after clear operation", 1)
+					return failWithHint(p, contract.ErrGeneric, &backend.UpdateOutcomeError{Applied: true, Err: errors.New("reminder clear verification failed")}, "Reminder still present after clear operation", 1)
 				}
 				meta["verified"] = true
 			}
 			if patch.ReminderOffset != nil {
 				if observed == nil || *observed != *patch.ReminderOffset {
-					return failWithHint(p, contract.ErrGeneric, errors.New("reminder offset verification failed"), "Observed reminder does not match requested offset", 1)
+					return failWithHint(p, contract.ErrGeneric, &backend.UpdateOutcomeError{Applied: true, Err: errors.New("reminder offset verification failed")}, "Observed reminder does not match requested offset", 1)
 				}
 				meta["verified"] = true
 			}
@@ -813,6 +813,8 @@ func maxTime(a, b time.Time) time.Time {
 	return b
 }
 
+const updateOutcomeHint = "Inspect Calendar before retrying; the write may already have applied. History and redo stacks are unchanged."
+
 func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hint string, exitCode int) error {
 	if err == nil {
 		err = errors.New("unknown error")
@@ -823,6 +825,10 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 		exitCode = 6
 		kind, _ := meta["kind"].(string)
 		switch kind {
+		case "update_applied_unverified":
+			code, exitCode, hint = contract.ErrUpdateUnverified, 1, updateOutcomeHint
+		case "update_outcome_unknown":
+			code, exitCode, hint = contract.ErrUpdateUnknown, 1, updateOutcomeHint
 		case "timeout":
 			hint = "Retry with a higher --timeout or run `acal doctor` for remediation"
 		case "canceled":

@@ -60,10 +60,10 @@ func replayReminder(ctx context.Context, be backend.Backend, id string, snapshot
 	}
 	observed, err := reminderOffsetWithTimeout(ctx, be, id)
 	if err != nil {
-		return fmt.Errorf("reminder updated but verification failed: %w", err)
+		return &backend.UpdateOutcomeError{Applied: true, Err: fmt.Errorf("reminder verification failed: %w", err)}
 	}
 	if (observed == nil) != (snapshot.Offset == nil) || (observed != nil && snapshot.Offset != nil && *observed != *snapshot.Offset) {
-		return fmt.Errorf("reminder updated but verification failed: observed offset does not match history")
+		return &backend.UpdateOutcomeError{Applied: true, Err: fmt.Errorf("observed reminder offset does not match history")}
 	}
 	return nil
 }
@@ -394,9 +394,15 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, fmt.Errorf("invalid update history entry")
 		}
 		in := buildUpdateInputFromEvent(last.Prev)
-		if _, err := updateEventWithTimeout(ctx, be, last.EventID, in); err != nil {
+		id := last.EventID
+		if last.Next != nil && last.Next.ID != "" {
+			id = last.Next.ID
+		}
+		updated, err := updateEventWithTimeout(ctx, be, id, in)
+		if err != nil {
 			return historyEntry{}, nil, err
 		}
+		redoEntry.EventID = updated.ID
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported history type: %s", last.Type)
 	}
@@ -472,9 +478,12 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, fmt.Errorf("update redo requires next snapshot")
 		}
 		in := buildUpdateInputFromEvent(last.Next)
-		if _, err := updateEventWithTimeout(ctx, be, last.EventID, in); err != nil {
+		updated, err := updateEventWithTimeout(ctx, be, last.EventID, in)
+		if err != nil {
 			return historyEntry{}, nil, err
 		}
+		applied.EventID = updated.ID
+		applied.Next = updated
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
 	}

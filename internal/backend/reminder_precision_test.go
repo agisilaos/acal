@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,10 @@ func TestNativeReminderPrecision(t *testing.T) {
 				if tc.want == "" {
 					if err == nil || !strings.Contains(err.Error(), "whole number of minutes") {
 						t.Fatalf("error = %v", err)
+					}
+					var outcome *UpdateOutcomeError
+					if errors.As(err, &outcome) {
+						t.Fatalf("preflight rejection must not report an uncertain write: %v", err)
 					}
 					if !os.IsNotExist(readErr) {
 						t.Fatalf("invalid offset invoked runner: %s, %v", raw, readErr)
