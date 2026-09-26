@@ -14,16 +14,57 @@ import (
 	"github.com/agis/acal/internal/contract"
 )
 
+type reminderSnapshot struct {
+	Offset *time.Duration `json:"offset_ns"`
+}
+
 type historyEntry struct {
-	At      time.Time       `json:"at"`
-	Type    string          `json:"type"`
-	TxID    string          `json:"tx_id,omitempty"`
-	OpID    string          `json:"op_id,omitempty"`
-	EventID string          `json:"event_id,omitempty"`
-	Prev    *contract.Event `json:"prev,omitempty"`
-	Next    *contract.Event `json:"next,omitempty"`
-	Created *contract.Event `json:"created,omitempty"`
-	Deleted *contract.Event `json:"deleted,omitempty"`
+	At             time.Time         `json:"at"`
+	Type           string            `json:"type"`
+	TxID           string            `json:"tx_id,omitempty"`
+	OpID           string            `json:"op_id,omitempty"`
+	EventID        string            `json:"event_id,omitempty"`
+	Prev           *contract.Event   `json:"prev,omitempty"`
+	Next           *contract.Event   `json:"next,omitempty"`
+	Created        *contract.Event   `json:"created,omitempty"`
+	Deleted        *contract.Event   `json:"deleted,omitempty"`
+	ReminderBefore *reminderSnapshot `json:"reminder_before,omitempty"`
+	ReminderAfter  *reminderSnapshot `json:"reminder_after,omitempty"`
+}
+
+// Legacy readers skip undecodable rows. Recognizable reminder payloads fail closed:
+// skipping one could make undo replay an older operation.
+func decodeHistoryEntry(line string) (*historyEntry, error) {
+	var entry historyEntry
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		var tag struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal([]byte(line), &tag)
+		if tag.Type == "reminder" {
+			return nil, fmt.Errorf("invalid reminder history entry: %w", err)
+		}
+		return nil, nil
+	}
+	if entry.Type == "reminder" && (strings.TrimSpace(entry.EventID) == "" || entry.ReminderBefore == nil || entry.ReminderAfter == nil) {
+		return nil, fmt.Errorf("invalid reminder history entry: event id and both reminder snapshots are required")
+	}
+	return &entry, nil
+}
+
+func replayReminder(ctx context.Context, be backend.Backend, id string, snapshot *reminderSnapshot) error {
+	patch := backend.EventUpdateInput{Scope: backend.ScopeAuto, ReminderOffset: snapshot.Offset, ClearReminder: snapshot.Offset == nil}
+	if _, err := updateEventWithTimeout(ctx, be, id, patch); err != nil {
+		return err
+	}
+	observed, err := reminderOffsetWithTimeout(ctx, be, id)
+	if err != nil {
+		return fmt.Errorf("reminder updated but verification failed: %w", err)
+	}
+	if (observed == nil) != (snapshot.Offset == nil) || (observed != nil && snapshot.Offset != nil && *observed != *snapshot.Offset) {
+		return fmt.Errorf("reminder updated but verification failed: observed offset does not match history")
+	}
+	return nil
 }
 
 func historyFilePath() string {
@@ -137,11 +178,13 @@ func readHistoryEntries(path string) ([]historyEntry, error) {
 		if s == "" {
 			continue
 		}
-		var e historyEntry
-		if err := json.Unmarshal([]byte(s), &e); err != nil {
-			continue
+		e, err := decodeHistoryEntry(s)
+		if err != nil {
+			return nil, err
 		}
-		out = append(out, e)
+		if e != nil {
+			out = append(out, *e)
+		}
 	}
 	return out, nil
 }
@@ -196,19 +239,24 @@ func readHistoryPage(limit, offset int) ([]historyEntry, bool, error) {
 			if s == "" {
 				continue
 			}
-			var e historyEntry
-			if err := json.Unmarshal([]byte(s), &e); err != nil {
-				continue
+			e, err := decodeHistoryEntry(s)
+			if err != nil {
+				return nil, false, err
 			}
-			desc = append(desc, e)
+			if e != nil {
+				desc = append(desc, *e)
+			}
 		}
 	}
 	if pos == 0 {
 		s := strings.TrimSpace(remainder)
 		if s != "" && len(desc) < need {
-			var e historyEntry
-			if err := json.Unmarshal([]byte(s), &e); err == nil {
-				desc = append(desc, e)
+			e, err := decodeHistoryEntry(s)
+			if err != nil {
+				return nil, false, err
+			}
+			if e != nil {
+				desc = append(desc, *e)
 			}
 		}
 	}
@@ -289,6 +337,10 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return historyEntry{}, nil, fmt.Errorf("history is empty")
 	}
 	last := entries[len(entries)-1]
+	redoEntries, err := readRedoHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
+	}
 	meta := map[string]any{"type": last.Type, "event_id": last.EventID}
 	if dryRun {
 		meta["dry_run"] = true
@@ -296,6 +348,10 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	}
 	redoEntry := last
 	switch last.Type {
+	case "reminder":
+		if err := replayReminder(ctx, be, last.EventID, last.ReminderBefore); err != nil {
+			return historyEntry{}, nil, err
+		}
 	case "add":
 		if strings.TrimSpace(last.EventID) == "" {
 			return historyEntry{}, nil, fmt.Errorf("invalid add history entry")
@@ -342,10 +398,6 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	if err := writeHistory(entries[:len(entries)-1]); err != nil {
 		return historyEntry{}, nil, err
 	}
-	redoEntries, err := readRedoHistory()
-	if err != nil {
-		return historyEntry{}, nil, err
-	}
 	redoEntry.At = time.Now().UTC()
 	redoEntries = append(redoEntries, redoEntry)
 	if err := writeRedoHistory(redoEntries); err != nil {
@@ -364,6 +416,10 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return historyEntry{}, nil, fmt.Errorf("redo history is empty")
 	}
 	last := redoEntries[len(redoEntries)-1]
+	historyEntries, err := readHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
+	}
 	meta := map[string]any{"type": last.Type, "event_id": last.EventID}
 	if dryRun {
 		meta["dry_run"] = true
@@ -371,6 +427,10 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	}
 	applied := last
 	switch last.Type {
+	case "reminder":
+		if err := replayReminder(ctx, be, last.EventID, last.ReminderAfter); err != nil {
+			return historyEntry{}, nil, err
+		}
 	case "add":
 		if last.Created == nil {
 			return historyEntry{}, nil, fmt.Errorf("add redo requires created snapshot")
@@ -412,10 +472,6 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		}
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
-	}
-	historyEntries, err := readHistory()
-	if err != nil {
-		return historyEntry{}, nil, err
 	}
 	applied.At = time.Now().UTC()
 	historyEntries = append(historyEntries, applied)

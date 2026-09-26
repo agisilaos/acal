@@ -234,9 +234,15 @@ Equal sort keys retain their fetched order in either direction; tie order can di
 - Persistence files (under config dir, usually `~/.config/acal/`):
   - `config.toml`: runtime defaults/profiles.
   - `history.jsonl`: append-only write history for undo.
-    - JSONL schema: `{"at","type","tx_id","op_id","event_id","prev","next","created","deleted"}`
+    - JSONL fields: `{"at","type","tx_id","op_id","event_id","prev","next","created","deleted","reminder_before","reminder_after"}`; operation-specific fields are omitted when unused.
+    - New `events remind` writes use `type: "reminder"`, a nonblank `event_id`, and required `reminder_before` / `reminder_after` objects instead of ordinary event snapshots. Each object has an optional `offset_ns` (signed integer nanoseconds): null or omitted means known-none; zero is an actual zero-offset alarm. A missing/null snapshot object is invalid, not a clear instruction. Readers reject invalid reminder payloads in parseable JSON rows; syntactically corrupt JSON lines retain the legacy skip behavior.
   - `redo.jsonl`: redo stack populated by `history undo`.
     - JSONL schema: same as `history.jsonl`.
+  - `history list`, `history undo`, and `history redo` expose the same entry fields in JSON / JSONL; the JSON envelope remains `schema_version: "v1"`.
+  - Reminder undo/redo changes only the display-alarm offset and verifies it by reading it back. `events remind` reads the prior offset before mutation and aborts if that read fails. An update or verification failure creates no new reminder history; failed undo/redo verification leaves the stacks unchanged, although Calendar may already have changed. History write failures retain their existing handling.
+  - Reminder snapshots cover only the first display alarm (or none). Set/clear and replay replace all display alarms; additional display alarms cannot be restored. Other alarm types are not captured or changed by these operations.
+  - Existing add/update/delete history and redo entries remain readable with their original replay behavior. Older generic reminder updates have no recoverable alarm snapshot and cannot be repaired retrospectively; no notes-marker migration is performed.
+  - Downgrade limitation: older acal binaries reject reminder entries during undo/redo, and can discard their snapshot fields when rewriting a stack for another operation. Do not use an older binary against these history files if reminder recovery is needed.
   - `queries.json`: saved query aliases.
     - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
 - History and redo contain full event snapshots. On macOS, accessing them restricts the `acal` config directory to `0700` and each accessed snapshot file to `0600`, including existing storage and history dry runs. Shared parent directories are unchanged.

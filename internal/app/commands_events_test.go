@@ -21,6 +21,8 @@ type scopeCaptureBackend struct {
 	getEvent    *contract.Event
 	reminder    *time.Duration
 	getErr      error
+	remindCalls int
+	remindErrAt int
 	remindErr   error
 	addErr      error
 	listErr     error
@@ -56,7 +58,8 @@ func (b *scopeCaptureBackend) GetEventByID(context.Context, string) (*contract.E
 }
 
 func (b *scopeCaptureBackend) GetReminderOffset(context.Context, string) (*time.Duration, error) {
-	if b.remindErr != nil {
+	b.remindCalls++
+	if b.remindErr != nil && (b.remindErrAt == 0 || b.remindCalls == b.remindErrAt) {
 		return nil, b.remindErr
 	}
 	return b.reminder, nil
@@ -575,12 +578,13 @@ func TestEventsRemindDryRunSetsReminderPatch(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	if fb.updateCalls != 0 {
-		t.Fatalf("expected no update calls in dry-run")
+	if fb.updateCalls != 0 || fb.remindCalls != 0 {
+		t.Fatalf("expected no reminder reads or updates in dry-run")
 	}
 }
 
 func TestEventsRemindClearCallsUpdate(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	notes := "foo\nacal:reminder=-15m\nbar"
 	fb := &scopeCaptureBackend{
 		getEvent: &contract.Event{
@@ -609,6 +613,7 @@ func TestEventsRemindClearCallsUpdate(t *testing.T) {
 }
 
 func TestEventsRemindSetVerifiesReadback(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	fb := &scopeCaptureBackend{
 		getEvent: &contract.Event{
 			ID:       "evt@792417600",
@@ -635,12 +640,14 @@ func TestEventsRemindSetVerifiesReadback(t *testing.T) {
 }
 
 func TestEventsRemindVerificationFailure(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	fb := &scopeCaptureBackend{
 		getEvent: &contract.Event{
 			ID:       "evt@792417600",
 			Sequence: 1,
 		},
-		remindErr: errors.New("readback failed"),
+		remindErr:   errors.New("readback failed"),
+		remindErrAt: 2,
 	}
 	origFactory := backendFactory
 	backendFactory = func(string) (backend.Backend, error) { return fb, nil }

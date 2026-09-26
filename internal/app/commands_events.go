@@ -761,6 +761,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if remindDryRun {
 				return successWithMeta(ctx, p, ro, patch, meta, nil)
 			}
+			prior, err := reminderOffsetWithTimeout(ctx, be, args[0])
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Unable to read prior reminder; no update performed", 1)
+			}
 			updated, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Reminder update failed", 1)
@@ -781,7 +785,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 				meta["verified"] = true
 			}
-			_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: item, Next: updated})
+			_ = appendHistory(historyEntry{Type: "reminder", EventID: args[0], ReminderBefore: &reminderSnapshot{Offset: prior}, ReminderAfter: &reminderSnapshot{Offset: observed}})
 			return successWithMeta(ctx, p, ro, updated, meta, nil)
 		},
 	}
