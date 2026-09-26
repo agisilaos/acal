@@ -33,6 +33,24 @@ make release VERSION=vX.Y.Z
 
 `release-check` validates the clean worktree, version, changelog, tests, documentation, module metadata, formatting, and version-stamped binary. `release-dry-run` builds both macOS archives and checksums, extracts the approved changelog section as release notes, and renders the Homebrew formula without remote writes.
 
+Before the final publish command, exercise the candidate binary extracted from
+the dry-run archive on a Mac with Calendar Automation permission and Full Calendar
+Access for the invoking app:
+
+```bash
+python3 scripts/calendar-smoke.py --binary /absolute/path/to/extracted/acal --allow-calendar-writes
+```
+
+This opt-in check creates one uniquely named calendar, uses isolated CLI state,
+verifies add/show/update/reminder/undo/redo/delete, and removes only its own
+calendar in cleanup. It prints an evidence directory containing the binary
+identity, command results, and cleanup result. A failure exits nonzero; inspect
+that directory before retrying. The default per-call timeout is 90 seconds for
+machines using the slower AppleScript read fallback. Routine CI never runs this
+live check. For native Calendar changes, record the tested macOS version and
+include a supported stable macOS host in release qualification; a beta-host pass
+alone does not establish stable-system behavior.
+
 The final command creates and pushes the tag, publishes the GitHub Release with the approved changelog section, and updates the configured Homebrew tap.
 
 Before publishing, verify that Git `origin`, the repository selected by `gh`,
