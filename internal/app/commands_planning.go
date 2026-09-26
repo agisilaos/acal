@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/agis/acal/internal/contract"
-	"github.com/agis/acal/internal/timeparse"
 	"github.com/spf13/cobra"
 )
 
@@ -108,19 +107,7 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
 			blocks := buildBusyBlocks(items, includeAllDay)
-			loc := resolveLocation(ro.TZ)
-			anchorStart, err := timeparse.ParseDateTime(fromS, time.Now(), loc)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from", 2)
-			}
-			anchorEnd, err := timeparse.ParseDateTime(toS, time.Now(), loc)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --to", 2)
-			}
-			if anchorEnd.Before(anchorStart) {
-				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("--to must not be earlier than --from"), "Adjust range", 2)
-			}
-			slots := buildSlots(blocks, anchorStart, anchorEnd, startHour, startMinute, endHour, endMinute, dur, step)
+			slots := buildSlots(blocks, f.From, f.To, startHour, startMinute, endHour, endMinute, dur, step)
 			return successWithMeta(ctx, p, ro, slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
 		},
 	}
