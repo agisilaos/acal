@@ -71,6 +71,14 @@ Plain event records display embedded control characters as visible escapes
 (for example, `\n`, `\t`, and `\u001b`) while preserving readable Unicode.
 With `--fields`, tabs separate columns and newlines separate records. JSON and
 JSONL retain the original field values through standard JSON encoding.
+Optional fields display their values (including `false` and empty strings);
+unset optional fields display `<nil>`. For example, these previews print
+`Changed` and `false`, respectively, without reading or writing an event:
+
+```bash
+acal events update review@1 --title Changed --dry-run --plain --fields title
+acal events update review@1 --all-day=false --dry-run --plain --fields all_day
+```
 
 ## Agent usage
 

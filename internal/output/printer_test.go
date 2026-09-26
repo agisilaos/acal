@@ -167,3 +167,35 @@ func TestPrinterErrorWithMetaJSON(t *testing.T) {
 		t.Fatalf("expected meta fields in json error, got: %q", got)
 	}
 }
+
+func TestPrinterPlainOptionalFields(t *testing.T) {
+	title := "Changed\tTitle\n"
+	empty := ""
+	allDay := false
+	start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	reminder := -15 * time.Minute
+	row := struct {
+		Title    *string
+		Empty    *string
+		AllDay   *bool
+		Start    *time.Time
+		Reminder *time.Duration
+		NilText  *string
+		NilBool  *bool
+		NilTime  *time.Time
+	}{Title: &title, Empty: &empty, AllDay: &allDay, Start: &start, Reminder: &reminder}
+	for _, data := range []any{row, &row, []any{row, &row}} {
+		var out bytes.Buffer
+		p := Printer{Mode: ModePlain, Out: &out, Fields: []string{"title", "empty", "all_day", "start", "reminder", "nil_text", "nil_bool", "nil_time", "missing", "title"}}
+		if err := p.Success(data, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		want := "Changed\\tTitle\\n\t\tfalse\t2026-10-01 09:00:00 +0000 UTC\t-15m0s\t<nil>\t<nil>\t<nil>\t\tChanged\\tTitle\\n\n"
+		if _, ok := data.([]any); ok {
+			want += want
+		}
+		if got := out.String(); got != want {
+			t.Fatalf("%T: got %q, want %q", data, got, want)
+		}
+	}
+}
