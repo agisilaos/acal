@@ -188,21 +188,16 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			items, err := listEventsWithTimeout(ctx, be, f)
-			if err != nil {
-				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
-			}
-			preds, err := parsePredicates(wheres)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
-			}
-			items, err = applyPredicates(items, preds)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Check --where field/operator/value", 2)
-			}
-			sortEvents(items, sortField, order)
-			if queryLimit > 0 && len(items) > queryLimit {
-				items = items[:queryLimit]
+			items, queryErr := executeQuery(ctx, be, f, wheres, sortField, order)
+			if queryErr != nil {
+				switch queryErr.stage {
+				case queryParse:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
+				case queryApply:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Check --where field/operator/value", 2)
+				default:
+					return failWithHint(p, contract.ErrBackendUnavailable, queryErr, "Run `acal doctor` for remediation", 6)
+				}
 			}
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},

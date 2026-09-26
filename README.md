@@ -199,6 +199,11 @@ See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
+`events query` and `queries run` apply predicates and sorting before the result limit.
+A positive limit returns at most that many matches; zero or a negative limit returns all matches.
+These commands fetch the complete selected date/calendar range, so a small result limit does not reduce scan work or memory use. Narrow the range or calendars for large datasets.
+Equal sort keys retain their fetched order in either direction; tie order can differ between backends.
+
 ## Docs
 
 - CLI roadmap and expansion plan: `docs/cli-expansion-roadmap.md`
