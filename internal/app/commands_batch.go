@@ -63,7 +63,7 @@ successful earlier rows. Use --dry-run to preview without writing.`,
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Check file path or stdin", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			txID := batchTxID()

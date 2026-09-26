@@ -100,7 +100,8 @@ func buildSetupResult(checks []contract.DoctorCheck, derr error, backend string)
 
 	if res.Ready {
 		res.NextSteps = append(res.NextSteps, "Verify read access with: `acal today --json`")
-		res.NextSteps = append(res.NextSteps, "Verify write access with: `acal quick-add \"tomorrow 10:00 Test @Personal 30m\" --dry-run --json`")
+		res.NextSteps = append(res.NextSteps, "Preview parsed event details without writing (does not verify write access): `acal quick-add \"tomorrow 10:00 Test @Personal 30m\" --dry-run --json`")
+		res.NextSteps = append(res.NextSteps, "To verify write access, choose an existing writable calendar, create a disposable event without --dry-run, confirm it in Calendar, then delete it. This changes Calendar data.")
 	}
 
 	if derr != nil && !res.Ready {

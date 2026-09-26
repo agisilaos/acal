@@ -24,7 +24,7 @@ Available Commands:
   week        List events for a week
 
 Flags:
-      --backend string          Backend: osascript|eventkit (default "osascript")
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
       --config string           Config file path
       --fail-on-degraded        Fail if backend health is degraded
       --fields string           Projected fields, comma-separated
@@ -38,7 +38,7 @@ Flags:
   -q, --quiet                   Reduce success output
       --schema-version string   Output schema version (default "v1")
       --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
-      --tz string               IANA timezone for output
+      --tz string               IANA timezone for dates and output (empty uses system local)
   -v, --verbose                 Verbose diagnostics
       --version                 version for acal
 

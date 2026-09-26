@@ -282,7 +282,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("--calendar, --title, and --start are required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Provide required fields", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			startT, err := timeparse.ParseDateTime(addStart, time.Now(), loc)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --start format", 2)
@@ -351,7 +351,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use --scope auto|this|future|series", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			patch := backend.EventUpdateInput{Scope: scope}
 			if cmd.Flags().Changed("title") {
 				patch.Title = &upTitle
@@ -499,7 +499,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("use exactly one of --to or --by")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> or --by <duration>", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			var by time.Duration
 			start := time.Time{}
 			if mvTo != "" {
@@ -585,7 +585,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				err = errors.New("--to is required")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Set --to <datetime> for the copied event start", 2)
 			}
-			loc := resolveLocation(ro.TZ)
+			loc := ro.Location
 			start, err := timeparse.ParseDateTime(cpTo, time.Now(), loc)
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Invalid --to datetime", 2)
@@ -722,7 +722,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	var remindIfMatch int
 	remind := &cobra.Command{
 		Use:   "remind <event-id>",
-		Short: "Set or clear reminder metadata for an event",
+		Short: "Set or clear a display alarm for an event",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, be, ro, err := buildContext(cmd, opts, "events.remind")
@@ -754,13 +754,22 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			patch := backend.EventUpdateInput{Scope: backend.ScopeAuto}
 			if remindClear {
 				patch.ClearReminder = true
+				// Retain the v1 field as a request marker; verified confirms completion.
 				meta["cleared"] = true
+				meta["clear_requested"] = true
 			} else {
 				patch.ReminderOffset = parsedOffset
 				meta["offset"] = parsedOffset.String()
 			}
 			if remindDryRun {
-				return successWithMeta(ctx, p, ro, patch, meta, nil)
+				meta["dry_run"] = true
+				meta["verified"] = false
+				// JSONL and plain output omit envelope metadata.
+				preview := struct {
+					backend.EventUpdateInput
+					DryRun bool `json:"dry_run"`
+				}{EventUpdateInput: patch, DryRun: true}
+				return successWithMeta(ctx, p, ro, preview, meta, nil)
 			}
 			prior, err := reminderOffsetWithTimeout(ctx, be, args[0])
 			if err != nil {
@@ -791,7 +800,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	remind.Flags().StringVar(&remindAt, "at", "", "Reminder offset in nonzero whole minutes (e.g. -15m, 1h; positive means before)")
-	remind.Flags().BoolVar(&remindClear, "clear", false, "Clear reminder metadata marker")
+	remind.Flags().BoolVar(&remindClear, "clear", false, "Clear the event display alarm")
 	remind.Flags().IntVar(&remindIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	remind.Flags().BoolVarP(&remindDryRun, "dry-run", "n", false, "Preview without writing")
 

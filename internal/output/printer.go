@@ -204,6 +204,9 @@ func flatten(v any, fields []string) string {
 			parts = append(parts, "")
 			continue
 		}
+		for fv.Kind() == reflect.Pointer && !fv.IsNil() {
+			fv = fv.Elem()
+		}
 		parts = append(parts, escapePlainControls(fmt.Sprint(fv.Interface())))
 	}
 	return strings.Join(parts, "\t")

@@ -1,3 +1,4 @@
 # output_file<TAB>command args
 root.txt	--help
 events-batch.txt	events batch --help
+events-remind.txt	events remind --help
