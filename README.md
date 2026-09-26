@@ -218,6 +218,8 @@ Equal sort keys retain their fetched order in either direction; tie order can di
 
 ## Notes
 
+`slots` uses the same resolved range for fetching events and finding gaps. A date-only `--to` includes its final day; explicit midnight ends receive the same expansion as event filters, while non-midnight timestamps clip the range exactly. `--limit` caps events scanned, not slots returned.
+
 - `events conflicts` caps output at 1,000 pairs by default; `--max-conflicts` accepts 1–10,000. JSON reports the cap in `meta.max_conflicts`, the returned count in `meta.count`, and omitted pairs through `meta.truncated` and a warning. Plain/JSONL warns on stderr. Narrow the date range or calendars when truncated. The separate `--limit` flag limits input events; truncation metadata only describes pairs among those events.
 - Event listing uses the local Calendar SQLite occurrence cache for reliable recurring-instance reads.
 - Event lookup requires an exact occurrence ID (`<uid>@<integer Cocoa start>`). It searches around the encoded start, including occurrences outside the former three-year past/future window. UID-only or malformed IDs return `event not found`; lookup does not refresh the occurrence cache.
