@@ -67,6 +67,11 @@ Use the implemented command set below and the examples section for common flows.
 - `--fail-on-degraded` fails non-health commands when environment is degraded
 - `--no-color` disable ANSI coloring in human-readable errors (also auto-disabled by `NO_COLOR` or `TERM=dumb`)
 
+Plain event records display embedded control characters as visible escapes
+(for example, `\n`, `\t`, and `\u001b`) while preserving readable Unicode.
+With `--fields`, tabs separate columns and newlines separate records. JSON and
+JSONL retain the original field values through standard JSON encoding.
+
 ## Agent usage
 
 Recommended automation patterns:
