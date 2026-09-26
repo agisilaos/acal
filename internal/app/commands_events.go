@@ -347,6 +347,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hasIfMatch := cmd.Flags().Changed("if-match-seq")
+			if hasIfMatch && ifMatch < 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--if-match-seq must be nonnegative"), "Use a sequence number of zero or greater", 2)
+			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			scope, err := parseRecurrenceScope(upScope)
@@ -424,10 +428,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--end must be after --start"), "Use --end or --duration", 2)
 			}
 			var current *contract.Event
-			if !upDryRun || needsStart || ifMatch > 0 {
+			if !upDryRun || needsStart || hasIfMatch {
 				current, err = getEventByIDWithTimeout(ctx, be, args[0])
 				if err != nil {
-					if ifMatch > 0 {
+					if hasIfMatch {
 						return failWithHint(p, contract.ErrNotFound, err, "Unable to verify sequence for --if-match-seq", 4)
 					}
 					if needsStart {
@@ -436,7 +440,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 					current = nil
 				}
 			}
-			if ifMatch > 0 && current.Sequence != ifMatch {
+			if hasIfMatch && current.Sequence != ifMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
 			}
@@ -491,6 +495,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hasIfMatch := cmd.Flags().Changed("if-match-seq")
+			if hasIfMatch && mvIfMatch < 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--if-match-seq must be nonnegative"), "Use a sequence number of zero or greater", 2)
+			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			scope, err := parseRecurrenceScope(mvScope)
@@ -523,7 +531,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if getErr != nil {
 				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
-			if mvIfMatch > 0 && current.Sequence != mvIfMatch {
+			if hasIfMatch && current.Sequence != mvIfMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, mvIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
 			}
@@ -672,6 +680,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hasIfMatch := cmd.Flags().Changed("if-match-seq")
+			if hasIfMatch && delIfMatch < 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--if-match-seq must be nonnegative"), "Use a sequence number of zero or greater", 2)
+			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			if !delForce && delConfirm != args[0] {
@@ -697,11 +709,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return successWithMeta(ctx, p, ro, item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
 			}
 			item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
-			if getErr == nil && delIfMatch > 0 && item.Sequence != delIfMatch {
+			if getErr == nil && hasIfMatch && item.Sequence != delIfMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, delIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
 			}
-			if getErr != nil && delIfMatch > 0 {
+			if getErr != nil && hasIfMatch {
 				return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
 			}
 			if err := deleteEventWithTimeout(ctx, be, args[0], scope); err != nil {
@@ -731,6 +743,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hasIfMatch := cmd.Flags().Changed("if-match-seq")
+			if hasIfMatch && remindIfMatch < 0 {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--if-match-seq must be nonnegative"), "Use a sequence number of zero or greater", 2)
+			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
 			if (strings.TrimSpace(remindAt) == "") == !remindClear {
@@ -748,7 +764,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
-			if remindIfMatch > 0 && item.Sequence != remindIfMatch {
+			if hasIfMatch && item.Sequence != remindIfMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, remindIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
 			}

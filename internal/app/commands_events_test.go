@@ -21,6 +21,7 @@ type scopeCaptureBackend struct {
 	getEvent    *contract.Event
 	reminder    *time.Duration
 	getErr      error
+	getCalls    int
 	remindCalls int
 	remindErrAt int
 	remindErr   error
@@ -51,6 +52,7 @@ func (b *scopeCaptureBackend) ListEvents(context.Context, backend.EventFilter) (
 }
 
 func (b *scopeCaptureBackend) GetEventByID(context.Context, string) (*contract.Event, error) {
+	b.getCalls++
 	if b.getEvent != nil || b.getErr != nil {
 		return b.getEvent, b.getErr
 	}
@@ -660,5 +662,53 @@ func TestEventsRemindVerificationFailure(t *testing.T) {
 	err := cmd.Execute()
 	if code := ExitCode(err); code != 1 {
 		t.Fatalf("expected exit code 1, got %d err=%v", code, err)
+	}
+}
+
+func TestEventSequenceGuardsIncludeZero(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	orig := backendFactory
+	t.Cleanup(func() { backendFactory = orig })
+	for _, command := range []struct {
+		name  string
+		flags []string
+	}{
+		{"update", []string{"--title", "changed"}}, {"move", []string{"--by", "1h"}}, {"delete", []string{"--force"}}, {"remind", []string{"--clear"}},
+	} {
+		for _, tc := range []struct {
+			name, guard    string
+			sequence, code int
+			missing        bool
+		}{
+			{"omitted", "", 7, 0, false}, {"zero matches", "0", 0, 0, false}, {"zero mismatches", "0", 7, 7, false}, {"negative", "-1", 7, 2, false}, {"positive matches", "7", 7, 0, false}, {"positive mismatches", "6", 7, 7, false}, {"missing guarded event", "0", 0, 4, true},
+		} {
+			t.Run(command.name+"/"+tc.name, func(t *testing.T) {
+				start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+				fb := &scopeCaptureBackend{getEvent: &contract.Event{ID: "evt", Start: start, End: start.Add(time.Hour), Sequence: tc.sequence}}
+				if tc.missing {
+					fb.getEvent = nil
+					fb.getErr = errors.New("missing")
+				}
+				backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+				args := append([]string{"events", command.name, "evt", "--json"}, command.flags...)
+				if tc.guard != "" {
+					args = append(args, "--if-match-seq", tc.guard)
+				}
+				cmd := NewRootCommand()
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs(args)
+				if code := ExitCode(cmd.Execute()); code != tc.code {
+					t.Fatalf("exit=%d want=%d", code, tc.code)
+				}
+				calls := fb.updateCalls + fb.deleteCalls
+				if tc.code == 0 && calls != 1 || tc.code != 0 && calls != 0 {
+					t.Fatalf("writes=%d exit=%d", calls, tc.code)
+				}
+				if tc.code == 2 && fb.getCalls != 0 {
+					t.Fatal("invalid guard read the event")
+				}
+			})
+		}
 	}
 }
