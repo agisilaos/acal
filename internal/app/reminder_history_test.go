@@ -331,32 +331,38 @@ func TestLegacyHistoryFixtures(t *testing.T) {
 	}
 }
 
-func TestReminderReplayRejectsMalformedDestination(t *testing.T) {
-	valid := []byte(`{"type":"reminder","event_id":"evt","reminder_before":{},"reminder_after":{"offset_ns":-900000000000}}` + "\n")
+func TestHistoryReplayRejectsMalformedReminderDestination(t *testing.T) {
 	invalid := []byte(`{"type":"reminder","event_id":"evt"}` + "\n")
-	for _, operation := range []string{"undo", "redo"} {
-		for _, dryRun := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/dry=%t", operation, dryRun), func(t *testing.T) {
-				setupReminderHistory(t)
-				history, redo := valid, invalid
-				if operation == "redo" {
-					history, redo = invalid, valid
-				}
-				if err := os.WriteFile(historyFilePath(), history, 0600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(redoFilePath(), redo, 0600); err != nil {
-					t.Fatal(err)
-				}
-				args := []string{"history", operation, "--json"}
-				if dryRun {
-					args = append(args, "--dry-run")
-				}
-				if _, err := runReminderHistoryCommand(t, &strictNoCallBackend{}, args...); err == nil {
-					t.Fatal("malformed destination accepted")
-				}
-				assertHistoryFiles(t, history, redo)
-			})
+	for _, source := range []struct{ name, row string }{
+		{"reminder", `{"type":"reminder","event_id":"evt","reminder_before":{},"reminder_after":{"offset_ns":-900000000000}}`},
+		{"add", `{"type":"add","event_id":"evt","created":{"calendar_name":"Work"}}`},
+		{"update", `{"type":"update","event_id":"evt","prev":{},"next":{}}`},
+		{"delete", `{"type":"delete","event_id":"evt","deleted":{"calendar_name":"Work"}}`},
+	} {
+		for _, operation := range []string{"undo", "redo"} {
+			for _, dryRun := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/dry=%t", source.name, operation, dryRun), func(t *testing.T) {
+					setupReminderHistory(t)
+					history, redo := []byte(source.row+"\n"), invalid
+					if operation == "redo" {
+						history, redo = redo, history
+					}
+					if err := os.WriteFile(historyFilePath(), history, 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(redoFilePath(), redo, 0600); err != nil {
+						t.Fatal(err)
+					}
+					args := []string{"history", operation, "--json"}
+					if dryRun {
+						args = append(args, "--dry-run")
+					}
+					if _, err := runReminderHistoryCommand(t, &strictNoCallBackend{}, args...); err == nil {
+						t.Fatal("malformed destination accepted")
+					}
+					assertHistoryFiles(t, history, redo)
+				})
+			}
 		}
 	}
 }

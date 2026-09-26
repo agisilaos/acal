@@ -319,12 +319,9 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return historyEntry{}, nil, fmt.Errorf("history is empty")
 	}
 	last := entries[len(entries)-1]
-	var redoEntries []historyEntry
-	if last.Type == "reminder" {
-		redoEntries, err = readRedoHistory()
-		if err != nil {
-			return historyEntry{}, nil, err
-		}
+	redoEntries, err := readRedoHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
 	}
 	meta := map[string]any{"type": last.Type, "event_id": last.EventID}
 	if dryRun {
@@ -383,12 +380,6 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	if err := writeHistory(entries[:len(entries)-1]); err != nil {
 		return historyEntry{}, nil, err
 	}
-	if last.Type != "reminder" {
-		redoEntries, err = readRedoHistory()
-		if err != nil {
-			return historyEntry{}, nil, err
-		}
-	}
 	redoEntry.At = time.Now().UTC()
 	redoEntries = append(redoEntries, redoEntry)
 	if err := writeRedoHistory(redoEntries); err != nil {
@@ -407,12 +398,9 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return historyEntry{}, nil, fmt.Errorf("redo history is empty")
 	}
 	last := redoEntries[len(redoEntries)-1]
-	var historyEntries []historyEntry
-	if last.Type == "reminder" {
-		historyEntries, err = readHistory()
-		if err != nil {
-			return historyEntry{}, nil, err
-		}
+	historyEntries, err := readHistory()
+	if err != nil {
+		return historyEntry{}, nil, err
 	}
 	meta := map[string]any{"type": last.Type, "event_id": last.EventID}
 	if dryRun {
@@ -466,12 +454,6 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		}
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
-	}
-	if last.Type != "reminder" {
-		historyEntries, err = readHistory()
-		if err != nil {
-			return historyEntry{}, nil, err
-		}
 	}
 	applied.At = time.Now().UTC()
 	historyEntries = append(historyEntries, applied)
