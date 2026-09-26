@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseEventID(t *testing.T) {
@@ -148,28 +149,28 @@ func TestOsaScriptRetryPolicyFromEnv(t *testing.T) {
 }
 
 func TestBuildListEventsQueryLimitClause(t *testing.T) {
-	q := buildListEventsQuery(1, 2, EventFilter{Limit: 25})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+2, 0), Limit: 25})
 	if !strings.Contains(q, "LIMIT 25") {
 		t.Fatalf("expected LIMIT clause in query, got: %s", q)
 	}
 }
 
 func TestBuildListEventsQueryNoLimitClause(t *testing.T) {
-	q := buildListEventsQuery(1, 2, EventFilter{})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+2, 0)})
 	if strings.Contains(q, "LIMIT ") {
 		t.Fatalf("did not expect LIMIT clause in query, got: %s", q)
 	}
 }
 
 func TestBuildListEventsQueryPushesCalendarPredicate(t *testing.T) {
-	q := buildListEventsQuery(1, 2, EventFilter{Calendars: []string{"Work", "cal-1"}})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+2, 0), Calendars: []string{"Work", "cal-1"}})
 	if !strings.Contains(q, "lower(COALESCE(c.UUID") || !strings.Contains(q, "IN ('work','cal-1')") {
 		t.Fatalf("expected calendar pushdown, got: %s", q)
 	}
 }
 
 func TestBuildListEventsQueryPushesQueryPredicate(t *testing.T) {
-	q := buildListEventsQuery(1, 2, EventFilter{Query: "Standup", Field: "title"})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+2, 0), Query: "Standup", Field: "title"})
 	if !strings.Contains(q, "lower(COALESCE(ci.summary, '')) LIKE") {
 		t.Fatalf("expected title LIKE pushdown, got: %s", q)
 	}
@@ -179,7 +180,7 @@ func TestBuildListEventsQueryPushesQueryPredicate(t *testing.T) {
 }
 
 func TestBuildListEventsQueryUnknownFieldUsesNoResultsPredicate(t *testing.T) {
-	q := buildListEventsQuery(1, 2, EventFilter{Query: "x", Field: "bogus"})
+	q := buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+2, 0), Query: "x", Field: "bogus"})
 	if !strings.Contains(q, "AND 1=0") {
 		t.Fatalf("expected impossible predicate for unknown field, got: %s", q)
 	}

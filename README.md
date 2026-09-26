@@ -233,6 +233,8 @@ Ordinary event lists and identity lookup retain inclusive start-in-range selecti
 `freebusy`, `slots`, and `events conflicts` instead retrieve events overlapping the
 resolved range: an event must start before `--to` and end after `--from`. An event
 ending exactly at the start or starting exactly at the end does not overlap.
+Zero-duration and inverted intervals are excluded before the availability scan
+limit; ordinary listing still includes them.
 Equal non-midnight bounds produce empty availability. Existing date-only and
 midnight end expansion still applies. Busy blocks and conflict overlap endpoints
 and minutes are clipped to that resolved range; event IDs remain unchanged.

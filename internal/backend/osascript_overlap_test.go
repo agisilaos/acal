@@ -43,7 +43,7 @@ func TestSQLiteRangeSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, overlap := range []bool{false, true} {
-				items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(10, 20, EventFilter{Overlap: overlap}), 0)
+				items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+10, 0), To: time.Unix(cocoaEpochOffset+20, 0), Overlap: overlap}), 0)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -63,7 +63,7 @@ func TestSQLiteRangeSelection(t *testing.T) {
 			if err != nil || (len(fallback) == 1) != tc.overlap {
 				t.Fatalf("AppleScript overlap: %+v, %v; want included=%v", fallback, err, tc.overlap)
 			}
-			items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(12, 12, EventFilter{Overlap: true}), 0)
+			items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+12, 0), To: time.Unix(cocoaEpochOffset+12, 0), Overlap: true}), 0)
 			if err != nil || len(items) != 0 {
 				t.Fatalf("empty range: %v, %v", items, err)
 			}
@@ -116,7 +116,7 @@ func TestAppleScriptRangeSelection(t *testing.T) {
 
 func TestSQLiteOverlapLimitAfterSelection(t *testing.T) {
 	path := buildSQLiteFixture(t, 4)
-	items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(2, 5, EventFilter{Overlap: true, Limit: 1}), 1)
+	items, err := listEventsViaSQLite(context.Background(), path, buildListEventsQuery(EventFilter{From: time.Unix(cocoaEpochOffset+2, 0), To: time.Unix(cocoaEpochOffset+5, 0), Overlap: true, Limit: 1}), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,5 +198,43 @@ func TestOverlapModernNanosecondBounds(t *testing.T) {
 		if err != nil || len(items) != 1 {
 			t.Fatalf("AppleScript dropped nanosecond overlap: %+v %v", items, err)
 		}
+	}
+}
+
+func TestOverlapSkipsNonpositiveIntervalsBeforeLimit(t *testing.T) {
+	for _, end := range []int64{2, 1} {
+		t.Run(fmt.Sprintf("end=%d", end), func(t *testing.T) {
+			path := buildSQLiteFixture(t, 3)
+			db, err := sql.Open("sqlite", "file:"+path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The invalid event starts inside the window before the real busy event.
+			if _, err = db.Exec("DELETE FROM OccurrenceCache WHERE event_id=1"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = db.Exec("UPDATE OccurrenceCache SET occurrence_end_date=? WHERE event_id=2", end); err != nil {
+				t.Fatal(err)
+			}
+			if err = db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			stubLookupAppleScript(t, fmt.Sprintf("invalid\tcal\tWork\tevent-2\t%d\t%d\tfalse\troom\tnote\turl\nvalid\tcal\tWork\tevent-3\t%d\t%d\tfalse\troom\tnote\turl\n", cocoaEpochOffset+2, cocoaEpochOffset+end, cocoaEpochOffset+3, cocoaEpochOffset+4), false)
+			for _, overlap := range []bool{false, true} {
+				f := EventFilter{From: time.Unix(cocoaEpochOffset, 0), To: time.Unix(cocoaEpochOffset+5, 0), Overlap: overlap, Limit: 1}
+				want := "event-2"
+				if overlap {
+					want = "event-3"
+				}
+				items, err := NewOsaScriptBackend().listEventsFromDB(context.Background(), path, f)
+				if err != nil || len(items) != 1 || items[0].Title != want {
+					t.Errorf("SQLite overlap=%v: %+v %v; want %s", overlap, items, err, want)
+				}
+				items, err = NewOsaScriptBackend().listEventsViaAppleScript(context.Background(), f)
+				if err != nil || len(items) != 1 || items[0].Title != want {
+					t.Errorf("AppleScript overlap=%v: %+v %v; want %s", overlap, items, err, want)
+				}
+			}
+		})
 	}
 }
