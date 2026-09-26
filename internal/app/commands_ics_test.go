@@ -303,3 +303,113 @@ func TestBuildICSExportsSeparateOccurrences(t *testing.T) {
 		}
 	}
 }
+
+func TestICSDateParameters(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name, header, value, want string
+		allDay                    bool
+	}{
+		{"winter", "DTSTART;TZID=America/New_York", "20260220T090000", "2026-02-20T14:00:00Z", false},
+		{"summer", "dtstart;tzid=America/New_York", "20260720T090000", "2026-07-20T13:00:00Z", false},
+		{"quoted", `DTSTART;TZID="America/New_York"`, "20260220T090000", "2026-02-20T14:00:00Z", false},
+		{"floating", "DTSTART", "20260220T090000", "2026-02-20T08:00:00Z", false},
+		{"explicit date-time", "DTSTART;VALUE=DATE-TIME", "20260220T090000", "2026-02-20T08:00:00Z", false},
+		{"UTC", "DTSTART;VALUE=DATE-TIME", "20260220T090000Z", "2026-02-20T09:00:00Z", false},
+		{"date", "DTSTART;value=date", "20260220", "2026-02-19T23:00:00Z", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			end := "DTEND:20260801T100000Z"
+			if tt.allDay {
+				end = "DTEND;VALUE=DATE:20260221"
+			}
+			raw := "BEGIN:VEVENT\n" + tt.header + ":" + tt.value + "\n" + end + "\nEND:VEVENT\n"
+			items, warnings := parseICS(raw, "Work", berlin)
+			if len(items) != 1 || len(warnings) != 0 {
+				t.Fatalf("items=%v warnings=%v", items, warnings)
+			}
+			if got := items[0].Start.UTC().Format(time.RFC3339); got != tt.want || items[0].AllDay != tt.allDay {
+				t.Fatalf("start=%s allDay=%t; want %s %t", got, items[0].AllDay, tt.want, tt.allDay)
+			}
+		})
+	}
+}
+
+func TestICSUnsupportedDateParameters(t *testing.T) {
+	for _, property := range []string{
+		"TZID=Mars/Olympus:20260220T090000",
+		"TZID=Local:20260220T090000",
+		"TZID=/custom/Zone:20260220T090000",
+		"TZID=America/New_York:20260220T090000Z",
+		"VALUE=DATE;TZID=America/New_York:20260220",
+		"VALUE=DATE-TIME:20260220",
+		"VALUE=DATE:20260220T090000",
+		"VALUE=DATE-OTHER:20260220",
+		`VALUE="":20260220T090000`,
+		"TZID=:20260220T090000",
+		"TZID=UTC;TZID=America/New_York:20260220T090000",
+	} {
+		t.Run(property, func(t *testing.T) {
+			for _, field := range []string{"DTSTART", "DTEND"} {
+				raw := "BEGIN:VEVENT\nDTSTART:20260220T080000Z\nDTEND:20260220T100000Z\n" + field + ";" + property + "\nEND:VEVENT\n"
+				items, warnings := parseICS(raw, "Work", time.UTC)
+				if len(items) != 0 || len(warnings) != 1 {
+					t.Fatalf("%s: items=%v warnings=%v", field, items, warnings)
+				}
+			}
+		})
+	}
+}
+
+func TestEventsImportTimezoneWrites(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		t.Run(map[bool]string{false: "normal", true: "strict"}[strict], func(t *testing.T) {
+			fb := &scopeCaptureBackend{}
+			origFactory := backendFactory
+			backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+			t.Cleanup(func() { backendFactory = origFactory })
+			raw := "BEGIN:VCALENDAR\n" +
+				"BEGIN:VEVENT\nDTSTART;TZID=America/New_York:20260220T090000\nDTEND;TZID=America/New_York:20260220T100000\nEND:VEVENT\n" +
+				"BEGIN:VTIMEZONE\nTZID:Custom\nEND:VTIMEZONE\n" +
+				"BEGIN:VEVENT\nDTSTART;TZID=Custom:20260220T090000\nDTEND;TZID=Custom:20260220T100000\nEND:VEVENT\nEND:VCALENDAR\n"
+			path := filepath.Join(t.TempDir(), "zones.ics")
+			if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := NewRootCommand()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(io.Discard)
+			args := []string{"events", "import", "--file", path, "--calendar", "Work", "--tz", "UTC", "--json"}
+			if strict {
+				args = append(args, "--strict")
+			}
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+			if strict {
+				if ExitCode(err) != 2 || fb.addCalls != 0 {
+					t.Fatalf("strict import: err=%v writes=%d", err, fb.addCalls)
+				}
+				return
+			}
+			if err != nil || fb.addCalls != 1 {
+				t.Fatalf("import: err=%v writes=%d", err, fb.addCalls)
+			}
+			if got := fb.addInput.Start.UTC().Format(time.RFC3339); got != "2026-02-20T14:00:00Z" {
+				t.Fatalf("backend start=%s", got)
+			}
+			if got := fb.addInput.End.UTC().Format(time.RFC3339); got != "2026-02-20T15:00:00Z" {
+				t.Fatalf("backend end=%s", got)
+			}
+			var result struct {
+				Warnings []string `json:"warnings"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &result); err != nil || len(result.Warnings) != 1 {
+				t.Fatalf("expected one warning: %s (%v)", out.String(), err)
+			}
+		})
+	}
+}

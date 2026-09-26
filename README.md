@@ -302,3 +302,20 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
   - `history list --limit <n>` returns at most `<n>` most-recent entries (default `10`; zero or negative limits also use `10`).
   - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`. Negative offsets are usage errors (exit `2`).
   - Pagination metadata reports the effective limit and offset; offsets beyond the stored history return an empty page.
+
+### ICS import date support
+
+ICS import accepts UTC date-times (`20260220T090000Z`), floating date-times,
+and `VALUE=DATE` all-day dates. `VALUE=DATE-TIME` is also supported. Floating
+values and all-day dates use `--tz`; date-times with `TZID` use the installed
+IANA timezone database, preserving identifier casing (for example,
+`DTSTART;TZID=America/New_York:20260220T090000`). Quoted TZID values are accepted.
+Winter and summer offsets follow the named zone's rules.
+
+Embedded `VTIMEZONE` definitions are not interpreted: recognized IANA identifiers
+use the system rules, and unknown/custom identifiers cause that VEVENT to be
+skipped with a warning. Unsupported VALUE types, invalid dates, and TZID on UTC
+or DATE values also cause warning/skip behavior. `--strict` rejects a file with
+parser warnings before creating any events, including otherwise valid entries.
+Corrected timezone handling affects new imports only; existing imported events
+are not repaired.
