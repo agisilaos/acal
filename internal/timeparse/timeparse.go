@@ -13,16 +13,15 @@ func ParseDateTime(input string, now time.Time, loc *time.Location) (time.Time, 
 		return time.Time{}, fmt.Errorf("empty time")
 	}
 
+	days, relative := 0, true
 	switch s {
 	case "today":
-		y, m, d := now.In(loc).Date()
-		return time.Date(y, m, d, 0, 0, 0, 0, loc), nil
 	case "tomorrow":
-		v, _ := ParseDateTime("today", now, loc)
-		return v.Add(24 * time.Hour), nil
+		days = 1
 	case "yesterday":
-		v, _ := ParseDateTime("today", now, loc)
-		return v.Add(-24 * time.Hour), nil
+		days = -1
+	default:
+		relative = false
 	}
 
 	if strings.HasPrefix(s, "+") || strings.HasPrefix(s, "-") {
@@ -36,9 +35,13 @@ func ParseDateTime(input string, now time.Time, loc *time.Location) (time.Time, 
 			if err != nil {
 				return time.Time{}, fmt.Errorf("invalid relative day: %s", input)
 			}
-			v, _ := ParseDateTime("today", now, loc)
-			return v.Add(time.Duration(sign*n) * 24 * time.Hour), nil
+			days, relative = sign*n, true
 		}
+	}
+	if relative {
+		y, m, d := now.In(loc).Date()
+		start := time.Date(y, m, d, 0, 0, 0, 0, loc)
+		return start.AddDate(0, 0, days), nil
 	}
 
 	layouts := []string{

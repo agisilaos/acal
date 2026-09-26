@@ -88,3 +88,40 @@ func TestQuickAddDryRunPlainOutput(t *testing.T) {
 		t.Fatalf("expected readable plain quick-add output, got: %q", got)
 	}
 }
+
+func TestParseQuickAddInputAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, now, input, start, end string
+		allDay                       bool
+		duration                     time.Duration
+	}{
+		{"spring all-day", "2026-03-28T12:00:00Z", "tomorrow Offsite @Work", "2026-03-29T00:00:00+01:00", "2026-03-30T00:00:00+02:00", true, 23 * time.Hour},
+		{"fall all-day", "2026-10-24T12:00:00Z", "tomorrow Offsite @Work", "2026-10-25T00:00:00+02:00", "2026-10-26T00:00:00+01:00", true, 25 * time.Hour},
+		{"spring tomorrow clock", "2026-03-29T12:00:00Z", "tomorrow 10:00 Standup @Work 30m", "2026-03-30T10:00:00+02:00", "2026-03-30T10:30:00+02:00", false, 30 * time.Minute},
+		{"fall tomorrow clock", "2026-10-25T12:00:00Z", "tomorrow 10:00 Standup @Work 30m", "2026-10-26T10:00:00+01:00", "2026-10-26T10:30:00+01:00", false, 30 * time.Minute},
+		{"spring elapsed duration", "2026-03-28T12:00:00Z", "tomorrow 01:30 Work @Work 2h", "2026-03-29T01:30:00+01:00", "2026-03-29T04:30:00+02:00", false, 2 * time.Hour},
+		{"fall elapsed duration", "2026-10-24T12:00:00Z", "tomorrow 01:30 Work @Work 2h", "2026-10-25T01:30:00+02:00", "2026-10-25T02:30:00+01:00", false, 2 * time.Hour},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			now, err := time.Parse(time.RFC3339, tc.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in, err := parseQuickAddInput(tc.input, now, loc, "", time.Hour, tc.allDay)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if in.Start.Format(time.RFC3339) != tc.start || in.End.Format(time.RFC3339) != tc.end {
+				t.Fatalf("got %s to %s, want %s to %s", in.Start, in.End, tc.start, tc.end)
+			}
+			if in.AllDay != tc.allDay || in.End.Sub(in.Start) != tc.duration {
+				t.Fatalf("allDay=%t duration=%s, want %t and %s", in.AllDay, in.End.Sub(in.Start), tc.allDay, tc.duration)
+			}
+		})
+	}
+}

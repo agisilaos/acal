@@ -318,6 +318,30 @@ func TestBuildEventFilterWrapper(t *testing.T) {
 	}
 }
 
+func TestBuildEventFilterCalendarDayEnds(t *testing.T) {
+	cases := []struct {
+		name, from, to, tz, start, end string
+	}{
+		{"UTC", "2026-02-08", "2026-02-08", "UTC", "2026-02-08T00:00:00Z", "2026-02-08T23:59:59Z"},
+		{"spring", "2026-03-29", "2026-03-29", "Europe/Berlin", "2026-03-29T00:00:00+01:00", "2026-03-29T23:59:59+02:00"},
+		{"fall", "2026-10-25", "2026-10-25", "Europe/Berlin", "2026-10-25T00:00:00+02:00", "2026-10-25T23:59:59+01:00"},
+		{"explicit spring midnight", "2026-03-29", "2026-03-29T00:00:00+01:00", "Europe/Berlin", "2026-03-29T00:00:00+01:00", "2026-03-29T23:59:59+02:00"},
+		{"explicit fall midnight", "2026-10-25", "2026-10-25T00:00:00+02:00", "Europe/Berlin", "2026-10-25T00:00:00+02:00", "2026-10-25T23:59:59+01:00"},
+		{"explicit time", "2026-03-29T01:00", "2026-03-29T12:00", "Europe/Berlin", "2026-03-29T01:00:00+01:00", "2026-03-29T12:00:00+02:00"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := buildEventFilterWithTZ(tc.from, tc.to, nil, 0, tc.tz)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.From.Format(time.RFC3339) != tc.start || f.To.Format(time.RFC3339) != tc.end {
+				t.Fatalf("got %s to %s, want %s to %s", f.From, f.To, tc.start, tc.end)
+			}
+		})
+	}
+}
+
 func TestRenderTopLevelErrorUnknownCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	var stderr bytes.Buffer

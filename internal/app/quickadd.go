@@ -130,7 +130,7 @@ func parseQuickAddInput(input string, now time.Time, loc *time.Location, default
 	if allDay {
 		y, m, d := start.Date()
 		start = time.Date(y, m, d, 0, 0, 0, 0, loc)
-		end = start.Add(24 * time.Hour)
+		end = start.AddDate(0, 0, 1)
 	}
 	return backend.EventCreateInput{
 		Calendar: calendar,
