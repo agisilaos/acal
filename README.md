@@ -85,6 +85,7 @@ Recommended automation patterns:
   - inspect `acal history list --json`
   - rollback with `acal history undo --json`
   - re-apply with `acal history redo --json`
+- Event updates preserve omitted title, location, notes, and URL fields. Supplied values are literal (including `__ACAL_KEEP__`); an empty string clears the field.
 - Reminder writes are read-back verified:
   - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 

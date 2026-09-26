@@ -93,16 +93,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	}, nil
 }
 
-func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventUpdateInput) (*contract.Event, error) {
-	uid, occ := parseEventID(id)
-	if uid == "" {
-		return nil, fmt.Errorf("invalid event id")
-	}
-	scope, err := resolveRecurrenceScope(in.Scope, occ)
-	if err != nil {
-		return nil, err
-	}
-
+func buildUpdateEventScript(uid string, occ int64, scope RecurrenceScope, in EventUpdateInput) ([]string, []string) {
 	keep := "__ACAL_KEEP__"
 	allDay := keep
 	if in.AllDay != nil {
@@ -116,21 +107,25 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	if in.End != nil {
 		end = strconv.FormatInt(in.End.Unix(), 10)
 	}
-	title := keep
+	// Omitted strings keep their argv slots but emit no setter. Supplied values
+	// stay in argv so even empty strings and the legacy sentinel remain literal.
+	var title, location, notes, url string
+	var stringSetters []string
 	if in.Title != nil {
 		title = *in.Title
+		stringSetters = append(stringSetters, `set summary of targetRef to titleText`)
 	}
-	location := keep
 	if in.Location != nil {
 		location = *in.Location
+		stringSetters = append(stringSetters, `set location of targetRef to locText`)
 	}
-	notes := keep
 	if in.Notes != nil {
 		notes = *in.Notes
+		stringSetters = append(stringSetters, `set description of targetRef to notesText`)
 	}
-	url := keep
 	if in.URL != nil {
 		url = *in.URL
+		stringSetters = append(stringSetters, `set url of targetRef to urlText`)
 	}
 	repeatText := keep
 	if in.RepeatRule != nil {
@@ -149,7 +144,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
 
-	out, err := runAppleScript(ctx, []string{
+	lines := []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,
@@ -193,10 +188,9 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`set foundAny to true`,
 		`repeat with targetEvent in targetEvents`,
 		`set targetRef to contents of targetEvent`,
-		`if titleText is not "__ACAL_KEEP__" then set summary of targetRef to titleText`,
-		`if locText is not "__ACAL_KEEP__" then set location of targetRef to locText`,
-		`if notesText is not "__ACAL_KEEP__" then set description of targetRef to notesText`,
-		`if urlText is not "__ACAL_KEEP__" then set url of targetRef to urlText`,
+	}
+	lines = append(lines, stringSetters...)
+	lines = append(lines, []string{
 		`if startText is not "__ACAL_KEEP__" then set start date of targetRef to (epoch + (startText as integer))`,
 		`if endText is not "__ACAL_KEEP__" then set end date of targetRef to (epoch + (endText as integer))`,
 		`if allDayText is not "__ACAL_KEEP__" then`,
@@ -229,7 +223,22 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 		`return updatedUID`,
 		`end tell`,
 		`end run`,
-	}, uid, string(scope), occUnix, title, start, end, location, notes, url, allDay, repeatText, reminderMins, clearReminder)
+	}...)
+	return lines, []string{uid, string(scope), occUnix, title, start, end, location, notes, url, allDay, repeatText, reminderMins, clearReminder}
+}
+
+func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventUpdateInput) (*contract.Event, error) {
+	uid, occ := parseEventID(id)
+	if uid == "" {
+		return nil, fmt.Errorf("invalid event id")
+	}
+	scope, err := resolveRecurrenceScope(in.Scope, occ)
+	if err != nil {
+		return nil, err
+	}
+
+	lines, args := buildUpdateEventScript(uid, occ, scope, in)
+	out, err := runAppleScript(ctx, lines, args...)
 	if err != nil {
 		return nil, err
 	}
