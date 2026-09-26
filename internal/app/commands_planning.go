@@ -54,7 +54,7 @@ func newFreebusyCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, blocks, map[string]any{"count": len(blocks), "busy_minutes": minutes, "events_scanned": len(items), "include_all_day": includeAllDay}, nil)
 		},
 	}
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().StringVar(&fromS, "from", "today", "Range start")
 	cmd.Flags().StringVar(&toS, "to", "+30d", "Range end")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit events scanned")
@@ -113,7 +113,7 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
 		},
 	}
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().StringVar(&fromS, "from", "today", "Range start")
 	cmd.Flags().StringVar(&toS, "to", "+14d", "Range end")
 	cmd.Flags().StringVar(&between, "between", "09:00-17:00", "Daily window as HH:MM-HH:MM")

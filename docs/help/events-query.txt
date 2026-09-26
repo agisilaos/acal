@@ -4,7 +4,7 @@ Usage:
   acal events query [flags]
 
 Flags:
-      --calendar strings    Calendar ID or name (repeatable)
+      --calendar strings    Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)
       --from string         Range start (default "today")
   -h, --help                help for query
       --limit int           Limit results

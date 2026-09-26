@@ -477,6 +477,21 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
   - `history list --offset <n>` skips `<n>` most-recent entries before applying `--limit`. Negative offsets are usage errors (exit `2`).
   - Pagination metadata reports the effective limit and offset; offsets beyond the stored history return an empty page.
 
+### Calendar names containing commas
+
+Read filters and saved queries accept repeated `--calendar` flags and CSV lists.
+For a name containing a comma, use its ID from `acal calendars list --json`, or
+preserve CSV double quotes inside shell single quotes:
+
+```bash
+acal events list --calendar '"Holiday, Family"' --json
+acal events list --calendar Work --calendar '"Holiday, Family"' --json
+```
+
+`--calendar 'Holiday, Family'` instead selects two names (`Holiday` and ` Family`).
+Single-calendar write flags such as add/import/quick-add take a literal value;
+use `--calendar 'Holiday, Family'` there, without embedded CSV quotes.
+
 ### ICS import date support
 
 ICS import accepts UTC date-times (`20260220T090000Z`), floating date-times,

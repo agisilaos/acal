@@ -52,7 +52,7 @@ func newEventsExportCmd(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().StringVar(&fromS, "from", "today", "Range start")
 	cmd.Flags().StringVar(&toS, "to", "+30d", "Range end")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit events exported")

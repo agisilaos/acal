@@ -39,7 +39,7 @@ func newAgendaCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&day, "day", "today", "Day selector")
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit results")
 	return cmd
 }
@@ -79,7 +79,7 @@ func newTodayCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&day, "day", "today", "Day selector")
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit results")
 	cmd.Flags().BoolVar(&summary, "summary", false, "Group by day with counts")
 	return cmd
@@ -127,7 +127,7 @@ func newWeekCmd(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&of, "of", "today", "Date selector within target week")
 	cmd.Flags().StringVar(&weekStart, "week-start", "monday", "Week start day: monday|sunday")
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit results")
 	cmd.Flags().BoolVar(&summary, "summary", false, "Group by day with counts")
 	return cmd
@@ -168,7 +168,7 @@ func newMonthCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&month, "month", "today", "Month selector: YYYY-MM, YYYY-MM-DD, today, +Nd")
-	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID or name")
+	cmd.Flags().StringSliceVar(&calendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit results")
 	cmd.Flags().BoolVar(&summary, "summary", false, "Group by day with counts")
 	return cmd

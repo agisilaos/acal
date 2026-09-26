@@ -145,7 +145,7 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 	}
 	save.Flags().StringVar(&saveFrom, "from", "today", "Range start")
 	save.Flags().StringVar(&saveTo, "to", "+30d", "Range end")
-	save.Flags().StringSliceVar(&saveCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	save.Flags().StringSliceVar(&saveCalendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	save.Flags().StringArrayVar(&saveWheres, "where", nil, "One literal predicate clause (repeatable; no comma splitting)")
 	save.Flags().StringVar(&saveSort, "sort", "start", "Sort field: start|end|title|updated_at|calendar")
 	save.Flags().StringVar(&saveOrder, "order", "asc", "Sort order: asc|desc")

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -174,6 +175,36 @@ func TestQueriesNullStoreAndCorruptStore(t *testing.T) {
 				if err != nil || string(after) != raw {
 					t.Fatal("corrupt store overwritten")
 				}
+			}
+		})
+	}
+}
+
+func TestCalendarCSVExamplesInSavedQueries(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, tc := range []struct {
+		name        string
+		flags, want []string
+	}{
+		{"quoted", []string{"--calendar", `"Holiday, Family"`}, []string{"Holiday, Family"}},
+		{"repeated", []string{"--calendar", "Work", "--calendar", `"Holiday, Family"`}, []string{"Work", "Holiday, Family"}},
+		{"list", []string{"--calendar", "Work,Home"}, []string{"Work", "Home"}},
+		{"id", []string{"--calendar", "calendar-id"}, []string{"calendar-id"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := NewRootCommand()
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(append([]string{"queries", "save", tc.name, "--json"}, tc.flags...))
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			store, err := loadSavedQueries()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := store[tc.name].Calendars; !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("calendars=%q want=%q", got, tc.want)
 			}
 		})
 	}

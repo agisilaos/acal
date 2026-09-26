@@ -114,7 +114,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
-	list.Flags().StringSliceVar(&listCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	list.Flags().StringSliceVar(&listCalendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	list.Flags().StringVar(&listFrom, "from", "today", "Range start")
 	list.Flags().StringVar(&listTo, "to", "+7d", "Range end")
 	list.Flags().IntVar(&listLimit, "limit", 0, "Limit results")
@@ -146,7 +146,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
-	search.Flags().StringSliceVar(&searchCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	search.Flags().StringSliceVar(&searchCalendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	search.Flags().StringVar(&searchFrom, "from", "today", "Range start")
 	search.Flags().StringVar(&searchTo, "to", "+30d", "Range end")
 	search.Flags().StringVar(&searchField, "field", "all", "Search field: title|location|notes|all")
@@ -204,7 +204,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
 	}
-	query.Flags().StringSliceVar(&queryCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	query.Flags().StringSliceVar(&queryCalendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	query.Flags().StringVar(&queryFrom, "from", "today", "Range start")
 	query.Flags().StringVar(&queryTo, "to", "+30d", "Range end")
 	query.Flags().StringArrayVar(&wheres, "where", nil, "One literal predicate clause (repeatable; no comma splitting)")
@@ -261,7 +261,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			return successWithMeta(ctx, p, ro, rows, meta, warnings)
 		},
 	}
-	conflicts.Flags().StringSliceVar(&conflictsCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
+	conflicts.Flags().StringSliceVar(&conflictsCalendars, "calendar", nil, "Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)")
 	conflicts.Flags().StringVar(&conflictsFrom, "from", "today", "Range start")
 	conflicts.Flags().StringVar(&conflictsTo, "to", "+30d", "Range end")
 	conflicts.Flags().IntVar(&conflictsLimit, "limit", 0, "Limit scanned events before conflict analysis")
