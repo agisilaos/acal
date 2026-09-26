@@ -109,10 +109,15 @@ Exit codes:
 
 - `0`: success
 - `1`: runtime/processing failure
-- `2`: invalid usage or validation failure
+- `2`: invalid usage or validation failure (including unknown commands, unknown flags, invalid flag values, and positional argument validation)
 - `4`: resource not found
 - `6`: backend unavailable
 - `7`: concurrency conflict (sequence mismatch)
+
+Parser errors leave stdout empty and write diagnostics to stderr. With `--json` or
+`--jsonl`, the diagnostic is a JSON error envelope with code `INVALID_USAGE`.
+For example, `acal events show --json` (missing event ID) and
+`acal history list --limit abc --json` both exit `2` before accessing Calendar.
 
 Notes:
 - `doctor`, `status`, `status explain`, and `setup` exit `0` when `ready=true` and `6` when required checks fail or are missing, in both plain and JSON output. Degraded environments can still be `ready=true` when core automation checks pass, even if the backend reports an error.
