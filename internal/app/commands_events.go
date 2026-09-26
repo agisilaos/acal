@@ -722,7 +722,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	var remindIfMatch int
 	remind := &cobra.Command{
 		Use:   "remind <event-id>",
-		Short: "Set or clear reminder metadata for an event",
+		Short: "Set or clear a display alarm for an event",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, be, ro, err := buildContext(cmd, opts, "events.remind")
@@ -754,13 +754,22 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			patch := backend.EventUpdateInput{Scope: backend.ScopeAuto}
 			if remindClear {
 				patch.ClearReminder = true
+				// Retain the v1 field as a request marker; verified confirms completion.
 				meta["cleared"] = true
+				meta["clear_requested"] = true
 			} else {
 				patch.ReminderOffset = parsedOffset
 				meta["offset"] = parsedOffset.String()
 			}
 			if remindDryRun {
-				return successWithMeta(ctx, p, ro, patch, meta, nil)
+				meta["dry_run"] = true
+				meta["verified"] = false
+				// JSONL and plain output omit envelope metadata.
+				preview := struct {
+					backend.EventUpdateInput
+					DryRun bool `json:"dry_run"`
+				}{EventUpdateInput: patch, DryRun: true}
+				return successWithMeta(ctx, p, ro, preview, meta, nil)
 			}
 			prior, err := reminderOffsetWithTimeout(ctx, be, args[0])
 			if err != nil {
@@ -791,7 +800,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		},
 	}
 	remind.Flags().StringVar(&remindAt, "at", "", "Reminder offset in nonzero whole minutes (e.g. -15m, 1h; positive means before)")
-	remind.Flags().BoolVar(&remindClear, "clear", false, "Clear reminder metadata marker")
+	remind.Flags().BoolVar(&remindClear, "clear", false, "Clear the event display alarm")
 	remind.Flags().IntVar(&remindIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	remind.Flags().BoolVarP(&remindDryRun, "dry-run", "n", false, "Preview without writing")
 

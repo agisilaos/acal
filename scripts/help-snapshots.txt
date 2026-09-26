@@ -1,2 +1,3 @@
 # output_file<TAB>command args
 root.txt	--help
+events-remind.txt	events remind --help
