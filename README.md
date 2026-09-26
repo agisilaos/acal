@@ -447,7 +447,7 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
   - Reminder snapshots cover only the first display alarm (or none). Set/clear and replay replace all display alarms; additional display alarms cannot be restored. Other alarm types are not captured or changed by these operations.
   - Existing add/update/delete history and redo entries remain readable with their original replay behavior. Older generic reminder updates have no recoverable alarm snapshot and cannot be repaired retrospectively; no notes-marker migration is performed.
   - Downgrade limitation: older acal binaries reject reminder entries during undo/redo, and can discard their snapshot fields when rewriting a stack for another operation. Do not use an older binary against these history files if reminder recovery is needed.
-  - `queries.json`: saved query aliases.
+  - `queries.json`: saved query aliases. Concurrent saves and deletes are serialized using `queries.json.lock`; updates replace the store atomically so readers see a complete snapshot.
     - JSON schema: `{ "<name>": {"name","from","to","calendars","wheres","sort","order","limit"} }`
 - History and redo contain full event snapshots. On macOS, accessing them restricts the `acal` config directory to `0700` and each accessed snapshot file to `0600`, including existing storage and history dry runs. Shared parent directories are unchanged.
 - Delete safety model:

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/agis/acal/internal/contract"
 	"github.com/spf13/cobra"
@@ -53,6 +54,26 @@ func loadSavedQueries() (map[string]savedQuery, error) {
 	return store, nil
 }
 
+// The lock has a stable inode; queries.json is replaced atomically on writes.
+func lockSavedQueries() (func(), error) {
+	path := queriesFilePath()
+	if path == "" {
+		return func() {}, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { _ = f.Close() }, nil
+}
+
 func writeSavedQueries(store map[string]savedQuery) error {
 	path := queriesFilePath()
 	if path == "" {
@@ -65,7 +86,19 @@ func writeSavedQueries(store map[string]savedQuery) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	f, err := os.CreateTemp(filepath.Dir(path), ".queries-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 func newQueriesCmd(opts *globalOptions) *cobra.Command {
@@ -88,6 +121,11 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			if name == "" {
 				return failWithHint(p, contract.ErrInvalidUsage, fmt.Errorf("name is required"), "Provide a preset name", 2)
 			}
+			unlock, err := lockSavedQueries()
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Unable to lock query store", 1)
+			}
+			defer unlock()
 			store, err := loadSavedQueries()
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Check queries file permissions", 1)
@@ -141,6 +179,11 @@ func newQueriesCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			unlock, err := lockSavedQueries()
+			if err != nil {
+				return failWithHint(p, contract.ErrGeneric, err, "Unable to lock query store", 1)
+			}
+			defer unlock()
 			store, err := loadSavedQueries()
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Check queries file permissions", 1)
