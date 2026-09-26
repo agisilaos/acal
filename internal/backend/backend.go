@@ -8,6 +8,9 @@ import (
 )
 
 type EventFilter struct {
+	// Overlap selects events intersecting [From, To); the default selects starts
+	// inclusively between From and To. Returned event bounds are never clipped.
+	Overlap   bool
 	Calendars []string
 	From      time.Time
 	To        time.Time

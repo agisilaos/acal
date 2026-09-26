@@ -234,11 +234,12 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
+			f.Overlap = true
 			items, err := listEventsWithTimeout(ctx, be, f)
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			rows, truncated := buildConflictRows(items, conflictsIncludeAllDay, conflictsMax)
+			rows, truncated := buildConflictRows(clipEventsToRange(items, f.From, f.To), conflictsIncludeAllDay, conflictsMax)
 			meta := map[string]any{
 				"count":           len(rows),
 				"events_scanned":  len(items),
