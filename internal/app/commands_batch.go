@@ -42,6 +42,12 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "batch",
 		Short: "Apply add/update/delete operations from JSONL",
+		Long: `Apply add/update/delete operations from JSONL, one object per nonblank line.
+Unknown fields are rejected before that row executes. Supported keys: op, id,
+calendar, title, start, end, duration, location, notes, url, all_day, scope.
+Recurrence fields such as repeat are not supported in batch rows.
+Rows execute in order; --strict stops at the first error without rolling back
+successful earlier rows. Use --dry-run to preview without writing.`,
 		RunE: func(c *cobra.Command, _ []string) error {
 			p, be, ro, err := buildContext(c, opts, "events.batch")
 			if err != nil {
@@ -69,10 +75,10 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 				if s == "" {
 					continue
 				}
-				var row batchLine
-				if err := json.Unmarshal([]byte(s), &row); err != nil {
+				row, err := decodeBatchLine(s)
+				if err != nil {
 					errorsCount++
-					results = append(results, map[string]any{"tx_id": txID, "op_id": batchOpID(i+1, "parse"), "line": i + 1, "ok": false, "error": "invalid json"})
+					results = append(results, map[string]any{"tx_id": txID, "op_id": batchOpID(i+1, "parse"), "line": i + 1, "ok": false, "error": err.Error()})
 					if !continueOnError {
 						break
 					}
@@ -128,6 +134,21 @@ func newEventsBatchCmd(opts *globalOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&continueOnError, "continue-on-error", true, "Continue processing after row errors")
 	cmd.Flags().BoolVar(&strict, "strict", false, "Fail fast on first row error")
 	return cmd
+}
+
+// Validate the entire line first so a second JSON value or trailing garbage
+// cannot be ignored by the streaming decoder.
+func decodeBatchLine(line string) (batchLine, error) {
+	var row batchLine
+	if !json.Valid([]byte(line)) {
+		return row, fmt.Errorf("invalid json")
+	}
+	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&row); err != nil {
+		return batchLine{}, err
+	}
+	return row, nil
 }
 
 func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, loc *time.Location, dryRun bool) (batchExecResult, error) {

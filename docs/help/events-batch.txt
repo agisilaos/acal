@@ -1,0 +1,33 @@
+Apply add/update/delete operations from JSONL, one object per nonblank line.
+Unknown fields are rejected before that row executes. Supported keys: op, id,
+calendar, title, start, end, duration, location, notes, url, all_day, scope.
+Recurrence fields such as repeat are not supported in batch rows.
+Rows execute in order; --strict stops at the first error without rolling back
+successful earlier rows. Use --dry-run to preview without writing.
+
+Usage:
+  acal events batch [flags]
+
+Flags:
+      --continue-on-error   Continue processing after row errors (default true)
+  -n, --dry-run             Preview without writing
+      --file string         JSONL file path or - for stdin
+  -h, --help                help for batch
+      --strict              Fail fast on first row error
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics
