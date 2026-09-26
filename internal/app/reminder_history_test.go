@@ -64,8 +64,21 @@ func TestReminderHistoryTransitions(t *testing.T) {
 			setupReminderHistory(t)
 			fb := &scopeCaptureBackend{reminder: tc.before}
 			args := append([]string{"events", "remind", "evt@792417600", "--json"}, tc.args...)
-			if _, err := runReminderHistoryCommand(t, fb, args...); err != nil {
+			output, err := runReminderHistoryCommand(t, fb, args...)
+			if err != nil {
 				t.Fatal(err)
+			}
+			var result struct {
+				Meta map[string]any `json:"meta"`
+			}
+			if err := json.Unmarshal([]byte(output), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Meta["verified"] != true || result.Meta["dry_run"] == true {
+				t.Fatalf("bad completed reminder metadata: %s", output)
+			}
+			if tc.after == nil && (result.Meta["cleared"] != true || result.Meta["clear_requested"] != true) {
+				t.Fatalf("bad confirmed clear metadata: %s", output)
 			}
 			if fb.remindCalls != 2 {
 				t.Fatalf("reminder reads = %d, want prior + verification", fb.remindCalls)

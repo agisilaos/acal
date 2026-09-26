@@ -27,7 +27,8 @@
     "degraded": false,
     "next_steps": [
       "Verify read access with: `acal today --json`",
-      "Verify write access with: `acal quick-add \"tomorrow 10:00 Test @Personal 30m\" --dry-run --json`"
+      "Preview parsed event details without writing (does not verify write access): `acal quick-add \"tomorrow 10:00 Test @Personal 30m\" --dry-run --json`",
+      "To verify write access, choose an existing writable calendar, create a disposable event without --dry-run, confirm it in Calendar, then delete it. This changes Calendar data."
     ],
     "permission_model": "macOS TCC stores approvals per app identity; keep a stable terminal and acal install path",
     "ready": true

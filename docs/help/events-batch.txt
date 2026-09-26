@@ -1,17 +1,19 @@
-Agent-focused deterministic query
+Apply add/update/delete operations from JSONL, one object per nonblank line.
+Unknown fields are rejected before that row executes. Supported keys: op, id,
+calendar, title, start, end, duration, location, notes, url, all_day, scope.
+Recurrence fields such as repeat are not supported in batch rows.
+Rows execute in order; --strict stops at the first error without rolling back
+successful earlier rows. Use --dry-run to preview without writing.
 
 Usage:
-  acal events query [flags]
+  acal events batch [flags]
 
 Flags:
-      --calendar strings    Calendar ID or name (repeatable)
-      --from string         Range start (default "today")
-  -h, --help                help for query
-      --limit int           Limit results
-      --order string        Sort order: asc|desc (default "asc")
-      --sort string         Sort field: start|end|title|updated_at|calendar (default "start")
-      --to string           Range end (default "+30d")
-      --where stringArray   One literal predicate clause (repeatable; no comma splitting)
+      --continue-on-error   Continue processing after row errors (default true)
+  -n, --dry-run             Preview without writing
+      --file string         JSONL file path or - for stdin
+  -h, --help                help for batch
+      --strict              Fail fast on first row error
 
 Global Flags:
       --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")

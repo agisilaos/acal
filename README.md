@@ -19,6 +19,22 @@ acal version
 
 Use the implemented command set below and the examples section for common flows.
 
+The supported backend is `osascript` (the default). The `eventkit` backend is
+not implemented; selecting `--backend eventkit` fails for backend commands.
+
+Run `acal setup --json` or `acal status --json` for health checks and permission
+guidance. A ready result does not verify write access. Preview parsed event
+details without writing:
+
+```bash
+acal quick-add "tomorrow 10:00 Test @Personal 30m" --dry-run --json
+```
+
+This preview does not check that Personal exists or is writable. To verify write
+access, choose an existing writable calendar, create a disposable event without
+`--dry-run`, confirm it in Calendar, then delete it. That verification changes
+Calendar data.
+
 ## Implemented
 
 - `doctor`
@@ -71,6 +87,14 @@ Plain event records display embedded control characters as visible escapes
 (for example, `\n`, `\t`, and `\u001b`) while preserving readable Unicode.
 With `--fields`, tabs separate columns and newlines separate records. JSON and
 JSONL retain the original field values through standard JSON encoding.
+Optional fields display their values (including `false` and empty strings);
+unset optional fields display `<nil>`. For example, these previews print
+`Changed` and `false`, respectively, without reading or writing an event:
+
+```bash
+acal events update review@1 --title Changed --dry-run --plain --fields title
+acal events update review@1 --all-day=false --dry-run --plain --fields all_day
+```
 
 ## Agent usage
 
@@ -102,6 +126,7 @@ Recommended automation patterns:
   - Series/future writes return the first native target actually changed as a representative only. This does not verify every occurrence or guarantee full-series undo. Native timestamps are converted independently of the local epoch; ambiguous DST-fold dates produce an unverified outcome. Existing native write targeting, local-epoch date setters, and recurrence limitations remain; this change does not guarantee native date writes across timezones.
   - Automated checks use fixtures/stubs and a Calendar-free AppleScript serialization check. Native Calendar round-trip guarantees require a separately authorized disposable-calendar integration run.
 - Reminder offsets must be exact whole minutes; fractional-minute values (such as `30s` or `90s`) are rejected before Calendar reads or writes. `events remind --at` requires a nonzero duration and treats either sign as before the event. Native writes and history replay preserve signed whole minutes, including zero for an alarm at the event start.
+- Reminder previews (`acal events remind <id> --at -15m --dry-run --json` or `acal events remind <id> --clear --dry-run --json`) read the event but do not update its display alarm or write history/redo. Preview data includes `dry_run: true` in JSON, JSONL, and plain output; JSON metadata also includes `dry_run: true` and `verified: false`. Clear requests include `meta.clear_requested: true`. The legacy v1 `meta.cleared: true` field is retained for compatibility and identifies the requested operation, not proof of completion; only `meta.verified: true` confirms a read-back-verified clear.
 - Reminder writes are read-back verified:
   - `acal events remind <id> --at -15m --json` verifies backend reminder state after update.
 
@@ -109,10 +134,15 @@ Exit codes:
 
 - `0`: success
 - `1`: runtime/processing failure
-- `2`: invalid usage or validation failure
+- `2`: invalid usage or validation failure (including unknown commands, unknown flags, invalid flag values, and positional argument validation)
 - `4`: resource not found
 - `6`: backend unavailable
 - `7`: concurrency conflict (sequence mismatch)
+
+Parser errors leave stdout empty and write diagnostics to stderr. With `--json` or
+`--jsonl`, the diagnostic is a JSON error envelope with code `INVALID_USAGE`.
+For example, `acal events show --json` (missing event ID) and
+`acal history list --limit abc --json` both exit `2` before accessing Calendar.
 
 Notes:
 - `doctor`, `status`, `status explain`, and `setup` exit `0` when `ready=true` and `6` when required checks fail or are missing, in both plain and JSON output. Degraded environments can still be `ready=true` when core automation checks pass, even if the backend reports an error.
@@ -135,6 +165,50 @@ Supported precedence: `flags > env > project config > user config > defaults`
   - `ACAL_OUTPUT` (`json|jsonl|plain`)
   - `ACAL_FIELDS`
   - `ACAL_NO_INPUT`
+
+Timezone values from `--tz`, `ACAL_TIMEZONE`, or config `tz` are validated after
+precedence is applied. An invalid effective value (for example, `Europe/Berln`)
+returns usage exit code 2 and names the value before any backend access. An
+omitted or empty effective timezone uses the system local timezone; `--tz ''`
+explicitly selects that default over an inherited timezone.
+
+Preview an event in a named timezone without writing to Calendar:
+
+```bash
+acal events add --calendar Work --title Review --start 2026-10-01T09:00 --duration 30m --tz Europe/Berlin --dry-run --json
+```
+
+Missing optional user/project files are allowed. A file selected explicitly with
+`--config PATH` or `ACAL_CONFIG` must exist. Existing files that cannot be read or
+parsed as TOML cause a usage error (exit 2), even if flags override their settings.
+`--config` takes precedence over `ACAL_CONFIG`. An additional config file overlays
+the project config, below environment variables and flags; selecting the user or
+project path already loaded does not change that layer's position.
+
+Invalid effective `timeout` and `output` values, or environment booleans
+(`ACAL_FAIL_ON_DEGRADED`, `ACAL_NO_INPUT`), report their source and accepted format.
+Higher-priority values can override invalid lower-priority values after TOML
+parsing. An enabled `--json`, `--jsonl`, or `--plain` overrides `ACAL_OUTPUT`;
+a false output flag alone does not make an invalid output setting valid.
+Empty settings retain their existing unset behavior. Unknown TOML keys are
+ignored. The selected profile overlays each file's base settings; an absent
+profile uses those base settings, and unselected profiles are not value-validated.
+
+These read-only examples list saved queries without accessing Calendar:
+
+```bash
+acal queries list --config ./runtime.toml --json
+ACAL_OUTPUT=json acal queries list
+ACAL_OUTPUT=jsno acal queries list # exits 2 and names ACAL_OUTPUT
+ACAL_OUTPUT=jsno acal queries list --json # flag overrides the invalid value
+```
+
+For the config example, create `runtime.toml` containing:
+
+```toml
+timeout = "15s"
+output = "plain"
+```
 
 ## Build
 
@@ -178,6 +252,13 @@ second, `23:59:59`. An explicit midnight filter end is expanded the same way.
 An agenda `--day` timestamp keeps its time of day and ends one calendar day later,
 minus one second.
 
+Quick-add plain output (both `quick-add` and `events quick-add`) defaults to
+`id`, `start`, `end`, `calendar`, `title`, with `dry-run` as the preview ID.
+Use `--fields title,start` to select columns in that order. Start and end use
+RFC3339 timestamps; calendar uses the created event's name, falling back to its
+ID. Control characters in plain cells are escaped, including tabs, newlines,
+and terminal escape characters. JSON and JSONL retain their full payloads.
+
 ```bash
 ./acal doctor --json
 ./acal setup --json
@@ -192,6 +273,7 @@ minus one second.
 ./acal month --month 2026-02 --json
 ./acal view month --month 2026-02 --summary --plain --fields date,total
 ./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
+./acal quick-add "2026-10-01 09:00 Review @Work 30m" --dry-run --plain --fields title,start --tz UTC
 ./acal history list --json
 ./acal history list --json --limit 10 --offset 10
 ./acal history undo --dry-run --json
@@ -216,6 +298,48 @@ minus one second.
 ./acal events batch --file ./ops.jsonl --dry-run --json
 ./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
 ./acal events delete <event-id>   # interactive TTY confirmation prompt
+```
+
+### Batch JSONL schema
+
+`events batch` reads one JSON object per nonblank line. Only these keys are
+recognized; string fields accept JSON strings and `all_day` accepts a boolean:
+
+| Operation (`op`) | Required fields | Optional fields used by the operation |
+| --- | --- | --- |
+| `add` | `calendar`, `title`, `start`, and either `end` or `duration` | `location`, `notes`, `url`, `all_day` |
+| `update` | `id` | `title`, `start`, `end`, `duration`, `location`, `notes`, `url`, `all_day`, `scope` |
+| `delete` | `id` | `scope` |
+
+`start` and `end` use the CLI datetime syntax and `--tz`; `duration` is a positive
+Go duration such as `30m` or `1h`. If both `end` and `duration` are supplied, `end`
+takes precedence. Update duration uses the supplied start or reads the existing
+start, including in dry runs. `scope` accepts `auto` (default), `this`, `future`, or `series`.
+Optional null values act like omitted values. Known keys unused by an operation
+retain their existing ignored behavior.
+
+Unknown keys (including `repeat`, misspellings, and producer metadata) now fail
+that row before it executes, with the field name in the row error and exit status
+1. Producers that previously attached extra keys must remove them or keep their
+metadata outside the batch input. Do not remove `repeat` expecting recurrence to
+survive: batch does not create or change recurrence rules; use the dedicated
+`events add` or `events update` command for recurrence.
+
+Rows execute in order. By default, processing continues after errors;
+`--strict` or `--continue-on-error=false` stops at the first failed row. This is
+not whole-file preflight or a transaction: earlier successful writes remain.
+Preview the file first with `--dry-run --strict --json`.
+
+For example, save these rows as `ops.jsonl` (replace the sample IDs before writing):
+
+```jsonl
+{"op":"add","calendar":"Work","title":"Batch","start":"2026-10-01T09:00","duration":"30m","location":"Room 4A","notes":"Planning","url":"https://example.com","all_day":false}
+{"op":"update","id":"sample-event-id","title":"Revised","scope":"this"}
+{"op":"delete","id":"sample-event-id","scope":"this"}
+```
+
+```bash
+./acal events batch --file ./ops.jsonl --dry-run --strict --json
 ```
 
 ICS import supports independent events only. VEVENT entries containing `RRULE`,

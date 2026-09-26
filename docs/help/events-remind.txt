@@ -1,17 +1,14 @@
-Agent-focused deterministic query
+Set or clear a display alarm for an event
 
 Usage:
-  acal events query [flags]
+  acal events remind <event-id> [flags]
 
 Flags:
-      --calendar strings    Calendar ID or name (repeatable)
-      --from string         Range start (default "today")
-  -h, --help                help for query
-      --limit int           Limit results
-      --order string        Sort order: asc|desc (default "asc")
-      --sort string         Sort field: start|end|title|updated_at|calendar (default "start")
-      --to string           Range end (default "+30d")
-      --where stringArray   One literal predicate clause (repeatable; no comma splitting)
+      --at string          Reminder offset in nonzero whole minutes (e.g. -15m, 1h; positive means before)
+      --clear              Clear the event display alarm
+  -n, --dry-run            Preview without writing
+  -h, --help               help for remind
+      --if-match-seq int   Require matching sequence number
 
 Global Flags:
       --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
