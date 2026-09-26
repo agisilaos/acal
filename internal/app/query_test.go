@@ -1,9 +1,13 @@
 package app
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/agis/acal/internal/backend"
 	"github.com/agis/acal/internal/contract"
 )
 
@@ -205,5 +209,37 @@ func TestPredicateGrammarCompatibility(t *testing.T) {
 	}
 	if got := applyPredicates(nil, matchers); got == nil || len(got) != 0 {
 		t.Fatalf("empty results must remain a non-nil slice: %+v", got)
+	}
+}
+
+func TestSortEventsPreservesTies(t *testing.T) {
+	for _, field := range []string{"start", "end", "title", "updated_at", "calendar"} {
+		for _, order := range []string{"asc", "desc"} {
+			t.Run(field+"/"+order, func(t *testing.T) {
+				// More than a small-sort cutoff ensures ties survive larger sorts too.
+				items := make([]contract.Event, 40)
+				for i := range items {
+					items[i].ID = fmt.Sprint(i)
+				}
+				sortEvents(items, field, order)
+				for i, item := range items {
+					if item.ID != fmt.Sprint(i) {
+						t.Fatalf("tie moved at %d: got %s", i, item.ID)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestExecuteQueryPreservesContextErrors(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			b := &scopeCaptureBackend{listErr: cause}
+			_, err := executeQuery(context.Background(), b, backend.EventFilter{Limit: 1}, nil, "start", "asc")
+			if err == nil || !errors.Is(err, cause) {
+				t.Fatalf("got %v; want wrapped %v", err, cause)
+			}
+		})
 	}
 }

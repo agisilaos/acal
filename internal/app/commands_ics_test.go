@@ -108,6 +108,62 @@ func TestEventsImportDryRun(t *testing.T) {
 	}
 }
 
+func TestEventsImportDryRunControlCharacters(t *testing.T) {
+	fb := &scopeCaptureBackend{}
+	origFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+	t.Cleanup(func() { backendFactory = origFactory })
+
+	const value = "Café 東京\x1b]52;c;payload\a\r\t\x00\b\x7f\u009b2J\u009dtext\u009c end"
+	const escaped = `Café 東京\u001b]52;c;payload\u0007\r\t\u0000\u0008\u007f\u009b2J\u009dtext\u009c end`
+	raw := "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n" +
+		"SUMMARY:" + value + "\r\nLOCATION:" + value + "\r\n" +
+		"DESCRIPTION:" + value + "\r\nURL:" + value + "\r\n" +
+		"DTSTART:20260220T090000Z\r\nDTEND:20260220T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+	f := filepath.Join(t.TempDir(), "controls.ics")
+	if err := os.WriteFile(f, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"--plain", "--json", "--jsonl"} {
+		t.Run(mode, func(t *testing.T) {
+			cmd := NewRootCommand()
+			var stdout bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"events", "import", "--file", f, "--calendar", "Work", "--dry-run", mode, "--fields", "title,location,notes,url"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "--plain" {
+				want := strings.Join([]string{escaped, escaped, escaped, escaped}, "\t") + "\n"
+				if stdout.String() != want {
+					t.Fatalf("got %q, want %q", stdout.String(), want)
+				}
+			} else {
+				var item backend.EventCreateInput
+				if mode == "--json" {
+					var env struct{ Data []backend.EventCreateInput }
+					if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+						t.Fatal(err)
+					}
+					if len(env.Data) != 1 {
+						t.Fatalf("expected one event, got %d", len(env.Data))
+					}
+					item = env.Data[0]
+				} else if err := json.Unmarshal(stdout.Bytes(), &item); err != nil {
+					t.Fatal(err)
+				}
+				if item.Title != value || item.Location != value || item.Notes != value || item.URL != value {
+					t.Fatalf("structured output changed event data: %+v", item)
+				}
+			}
+			if fb.addCalls != 0 {
+				t.Fatalf("expected no add calls in dry-run, got %d", fb.addCalls)
+			}
+		})
+	}
+}
+
 func TestEventsImportMalformedICS(t *testing.T) {
 	fb := &scopeCaptureBackend{}
 	origFactory := backendFactory

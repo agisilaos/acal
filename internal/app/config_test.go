@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agis/acal/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,8 @@ func TestResolveGlobalOptionsPrecedence(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(wd) })
 
 	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("ACAL_CONFIG", "")
 	t.Setenv("ACAL_BACKEND", "env-backend")
 	t.Setenv("ACAL_OUTPUT", "jsonl")
 
@@ -35,13 +38,12 @@ func TestResolveGlobalOptionsPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defaults := &globalOptions{Profile: "default", Backend: "default-backend", SchemaVersion: "v1", JSON: true}
+	defaults := &globalOptions{Profile: "default", Backend: "default-backend", SchemaVersion: "v1"}
 	cmd := newTestCmd()
 	if err := cmd.ParseFlags([]string{"--backend", "flag-backend", "--json"}); err != nil {
 		t.Fatal(err)
 	}
 	defaults.Backend = "flag-backend"
-	defaults.JSON = true
 
 	resolved, err := resolveGlobalOptions(cmd, defaults)
 	if err != nil {
@@ -50,8 +52,8 @@ func TestResolveGlobalOptionsPrecedence(t *testing.T) {
 	if resolved.Backend != "flag-backend" {
 		t.Fatalf("expected flag backend, got %q", resolved.Backend)
 	}
-	if !resolved.JSON || resolved.JSONL || resolved.Plain {
-		t.Fatalf("expected JSON mode from flag override, got json=%v jsonl=%v plain=%v", resolved.JSON, resolved.JSONL, resolved.Plain)
+	if resolved.OutputMode != output.ModeJSON {
+		t.Fatalf("expected JSON mode from flag override, got %q", resolved.OutputMode)
 	}
 	if resolved.Fields != "id,title" {
 		t.Fatalf("expected fields from project config, got %q", resolved.Fields)
@@ -70,9 +72,12 @@ func TestResolveGlobalOptionsProfile(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(wd) })
 
 	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("ACAL_CONFIG", "")
 	t.Setenv("ACAL_PROFILE", "work")
+	t.Setenv("ACAL_OUTPUT", "")
 
-	cfg := "backend='base-backend'\n[profiles.work]\nbackend='work-backend'\n"
+	cfg := "backend='base-backend'\noutput='plain'\n[profiles.work]\nbackend='work-backend'\noutput='jsonl'\n"
 	if err := os.WriteFile(filepath.Join(tmp, ".acal.toml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +89,9 @@ func TestResolveGlobalOptionsProfile(t *testing.T) {
 	}
 	if resolved.Profile != "work" {
 		t.Fatalf("expected work profile, got %q", resolved.Profile)
+	}
+	if resolved.OutputMode != output.ModeJSONL {
+		t.Fatalf("expected profile output mode, got %q", resolved.OutputMode)
 	}
 	if resolved.Backend != "work-backend" {
 		t.Fatalf("expected profile backend, got %q", resolved.Backend)
@@ -149,6 +157,127 @@ func TestResolveGlobalOptionsFailOnDegraded(t *testing.T) {
 	}
 	if resolved.FailOnDegraded {
 		t.Fatalf("expected flag override to false")
+	}
+}
+
+func TestResolveGlobalOptionsOutputFlags(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("ACAL_CONFIG", "")
+	t.Setenv("ACAL_PROFILE", "")
+
+	// Columns are inherited auto, JSON, JSONL, and plain, respectively.
+	const (
+		auto  = output.ModeAuto
+		json  = output.ModeJSON
+		jsonl = output.ModeJSONL
+		plain = output.ModePlain
+	)
+	cases := []struct {
+		name string
+		args []string
+		want [4]output.Mode
+	}{
+		{"no flags", nil, [4]output.Mode{auto, json, jsonl, plain}},
+		{"json true", []string{"--json"}, [4]output.Mode{json, json, json, json}},
+		{"jsonl true", []string{"--jsonl"}, [4]output.Mode{jsonl, jsonl, jsonl, jsonl}},
+		{"plain true", []string{"--plain"}, [4]output.Mode{plain, plain, plain, plain}},
+		{"json false", []string{"--json=false"}, [4]output.Mode{auto, auto, jsonl, plain}},
+		{"jsonl false", []string{"--jsonl=false"}, [4]output.Mode{auto, json, auto, plain}},
+		{"plain false", []string{"--plain=false"}, [4]output.Mode{auto, json, jsonl, auto}},
+		{"all false", []string{"--json=false", "--jsonl=false", "--plain=false"}, [4]output.Mode{auto, auto, auto, auto}},
+		{"json true others false", []string{"--json", "--jsonl=false", "--plain=false"}, [4]output.Mode{json, json, json, json}},
+		{"jsonl true others false", []string{"--json=false", "--jsonl", "--plain=false"}, [4]output.Mode{jsonl, jsonl, jsonl, jsonl}},
+		{"plain true others false", []string{"--json=false", "--jsonl=false", "--plain"}, [4]output.Mode{plain, plain, plain, plain}},
+		{"last json flag false", []string{"--json", "--json=false"}, [4]output.Mode{auto, auto, jsonl, plain}},
+	}
+	for i, inherited := range []string{"", "json", "jsonl", "plain"} {
+		t.Run("inherited="+inherited, func(t *testing.T) {
+			t.Setenv("ACAL_OUTPUT", inherited)
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					cmd := newTestCmd()
+					if err := cmd.ParseFlags(tc.args); err != nil {
+						t.Fatal(err)
+					}
+					resolved, err := resolveGlobalOptions(cmd, &globalOptions{})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if resolved.OutputMode != tc.want[i] {
+						t.Fatalf("mode = %q, want %q", resolved.OutputMode, tc.want[i])
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestResolveGlobalOptionsOutputConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("ACAL_CONFIG", "")
+	t.Setenv("ACAL_PROFILE", "work")
+
+	cases := []struct {
+		name   string
+		config string
+		env    string
+		want   output.Mode
+	}{
+		{"file json", "output='json'", "", output.ModeJSON},
+		{"file jsonl", "output='JSONL'", "", output.ModeJSONL},
+		{"file plain", "output='plain'", "", output.ModePlain},
+		{"unknown file", "output='unknown'", "", output.ModePlain},
+		{"auto file", "output='auto'", "", output.ModePlain},
+		{"untrimmed file", "output=' json '", "", output.ModePlain},
+		{"unknown env", "output='json'", "unknown", output.ModeJSON},
+		{"auto env", "output='jsonl'", "auto", output.ModeJSONL},
+		{"trimmed env", "output='plain'", " JSON ", output.ModeJSON},
+		{"profile", "output='json'\n[profiles.work]\noutput='jsonl'", "", output.ModeJSONL},
+		{"unknown profile", "output='json'\n[profiles.work]\noutput='unknown'", "", output.ModePlain},
+		{"auto profile", "output='json'\n[profiles.work]\noutput='auto'", "", output.ModePlain},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ACAL_OUTPUT", tc.env)
+			if err := os.WriteFile(".acal.toml", []byte(tc.config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			resolved, err := resolveGlobalOptions(newTestCmd(), &globalOptions{OutputMode: output.ModePlain})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.OutputMode != tc.want {
+				t.Fatalf("mode = %q, want %q", resolved.OutputMode, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveGlobalOptionsInheritedOutputFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("ACAL_CONFIG", "")
+	t.Setenv("ACAL_OUTPUT", "json")
+
+	root := NewRootCommand()
+	if err := root.ParseFlags([]string{"--json=false"}); err != nil {
+		t.Fatal(err)
+	}
+	child, _, err := root.Find([]string{"events", "list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveGlobalOptions(child, &globalOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.OutputMode != output.ModeAuto {
+		t.Fatalf("mode = %q, want auto", resolved.OutputMode)
 	}
 }
 

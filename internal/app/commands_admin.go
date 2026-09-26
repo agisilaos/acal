@@ -56,16 +56,11 @@ func newDoctorCmd(opts *globalOptions) *cobra.Command {
 			}
 			warnings := setup.Notes
 			if p.EffectiveSuccessMode() == output.ModePlain {
-				return printDoctorPlain(cmd.OutOrStdout(), checks, setup, reasonCodes)
+				_ = printDoctorPlain(cmd.OutOrStdout(), checks, setup, reasonCodes)
+			} else {
+				_ = successWithMeta(ctx, p, ro, checks, meta, warnings)
 			}
-			_ = successWithMeta(ctx, p, ro, checks, meta, warnings)
-			if !setup.Ready && derr != nil {
-				return WrapPrinted(6, derr)
-			}
-			if !setup.Ready {
-				return Wrap(6, fmt.Errorf("doctor checks not ready"))
-			}
-			return nil
+			return healthOutcome(setup.Ready, derr, "doctor checks not ready")
 		},
 	}
 }
@@ -107,14 +102,10 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 			} else {
 				_ = successWithMeta(ctx, p, ro, res, meta, nil)
 			}
-			if !setup.Ready {
-				if derr != nil {
-					_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` for remediation")
-					return WrapPrinted(6, derr)
-				}
-				return Wrap(6, fmt.Errorf("status not ready"))
+			if !setup.Ready && derr != nil {
+				_ = p.Error(contract.ErrBackendUnavailable, derr.Error(), "Run `acal setup` for remediation")
 			}
-			return nil
+			return healthOutcome(setup.Ready, derr, "status not ready")
 		},
 	}
 	explain := &cobra.Command{
@@ -146,13 +137,7 @@ func newStatusCmd(opts *globalOptions) *cobra.Command {
 					"next_steps":            setup.NextSteps,
 				}, map[string]any{"count": len(setup.NextSteps)}, setup.Notes)
 			}
-			if !setup.Ready && derr != nil {
-				return WrapPrinted(6, derr)
-			}
-			if !setup.Ready {
-				return Wrap(6, fmt.Errorf("status not ready"))
-			}
-			return nil
+			return healthOutcome(setup.Ready, derr, "status not ready")
 		},
 	}
 	status.AddCommand(explain)

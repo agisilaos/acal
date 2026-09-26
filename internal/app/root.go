@@ -21,9 +21,7 @@ import (
 var backendFactory = selectBackend
 
 type globalOptions struct {
-	JSON           bool
-	JSONL          bool
-	Plain          bool
+	OutputMode     output.Mode
 	Fields         string
 	Quiet          bool
 	Verbose        bool
@@ -64,9 +62,9 @@ func NewRootCommand() *cobra.Command {
 	}
 	root.SetVersionTemplate("acal {{.Version}}\n")
 
-	root.PersistentFlags().BoolVar(&opts.JSON, "json", false, "Output structured JSON")
-	root.PersistentFlags().BoolVar(&opts.JSONL, "jsonl", false, "Output newline-delimited JSON")
-	root.PersistentFlags().BoolVar(&opts.Plain, "plain", false, "Output stable plain text")
+	root.PersistentFlags().Bool("json", false, "Output structured JSON")
+	root.PersistentFlags().Bool("jsonl", false, "Output newline-delimited JSON")
+	root.PersistentFlags().Bool("plain", false, "Output stable plain text")
 	root.PersistentFlags().StringVar(&opts.Fields, "fields", "", "Projected fields, comma-separated")
 	root.PersistentFlags().BoolVarP(&opts.Quiet, "quiet", "q", false, "Reduce success output")
 	root.PersistentFlags().BoolVarP(&opts.Verbose, "verbose", "v", false, "Verbose diagnostics")
@@ -106,20 +104,9 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 	if err != nil {
 		return output.Printer{}, nil, nil, Wrap(2, err)
 	}
-	if conflictCount(resolved.JSON, resolved.JSONL, resolved.Plain) > 1 {
-		return output.Printer{}, nil, nil, Wrap(2, errors.New("--json, --jsonl, and --plain are mutually exclusive"))
-	}
-	mode := output.ModeAuto
-	if resolved.JSON {
-		mode = output.ModeJSON
-	} else if resolved.JSONL {
-		mode = output.ModeJSONL
-	} else if resolved.Plain {
-		mode = output.ModePlain
-	}
 
 	printer := output.Printer{
-		Mode:          mode,
+		Mode:          resolved.OutputMode,
 		Command:       command,
 		Fields:        splitCSV(resolved.Fields),
 		Quiet:         resolved.Quiet,
@@ -147,7 +134,7 @@ func buildContext(cmd *cobra.Command, opts *globalOptions, command string) (outp
 		}
 	}
 	if resolved.Verbose {
-		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, resolved.Backend, mode, resolved.TZ, resolved.Profile, resolved.Timeout)
+		_, _ = fmt.Fprintf(printer.Err, "acal: command=%s backend=%s mode=%s tz=%s profile=%s timeout=%s\n", command, resolved.Backend, resolved.OutputMode, resolved.TZ, resolved.Profile, resolved.Timeout)
 	}
 	return printer, be, resolved, nil
 }
@@ -531,16 +518,6 @@ func promptConfirmID(in io.Reader, out io.Writer, expected string) (bool, error)
 		return false, err
 	}
 	return strings.TrimSpace(entered) == strings.TrimSpace(expected), nil
-}
-
-func conflictCount(vals ...bool) int {
-	total := 0
-	for _, v := range vals {
-		if v {
-			total++
-		}
-	}
-	return total
 }
 
 func splitCSV(s string) []string {

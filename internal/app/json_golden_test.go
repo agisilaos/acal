@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -170,46 +169,17 @@ func TestJSONGolden(t *testing.T) {
 func runRootForJSONGolden(t *testing.T, args []string) string {
 	t.Helper()
 	cmd := NewRootCommand()
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs(args)
-	stdout := captureStdout(t, func() error { return cmd.Execute() })
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("command failed: %v", err)
+	}
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
 	}
-	return normalizeEnvelopeJSON(t, []byte(stdout))
-}
-
-func captureStdout(t *testing.T, fn func() error) string {
-	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe create failed: %v", err)
-	}
-	os.Stdout = w
-	defer func() { os.Stdout = orig }()
-
-	errCh := make(chan error, 1)
-	var buf bytes.Buffer
-	go func() {
-		_, copyErr := io.Copy(&buf, r)
-		errCh <- copyErr
-	}()
-
-	runErr := fn()
-	_ = w.Close()
-	copyErr := <-errCh
-	_ = r.Close()
-
-	if runErr != nil {
-		returnError := runErr
-		t.Fatalf("command failed: %v", returnError)
-	}
-	if copyErr != nil {
-		t.Fatalf("stdout capture failed: %v", copyErr)
-	}
-	return buf.String()
+	return normalizeEnvelopeJSON(t, stdout.Bytes())
 }
 
 func normalizeEnvelopeJSON(t *testing.T, raw []byte) string {

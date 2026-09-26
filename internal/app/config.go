@@ -1,12 +1,14 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/agis/acal/internal/output"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +26,9 @@ type fileConfig struct {
 
 func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalOptions, error) {
 	resolved := *defaults
+	if resolved.OutputMode == "" {
+		resolved.OutputMode = output.ModeAuto
+	}
 
 	profile := firstNonEmpty(env("ACAL_PROFILE"), defaults.Profile)
 	if flagValueChanged(cmd, "profile") {
@@ -55,6 +60,11 @@ func resolveGlobalOptions(cmd *cobra.Command, defaults *globalOptions) (*globalO
 
 	applyEnv(&resolved)
 	applyFlags(cmd, &resolved, defaults)
+	mode, err := resolveOutputMode(cmd, resolved.OutputMode)
+	if err != nil {
+		return nil, err
+	}
+	resolved.OutputMode = mode
 
 	if resolved.Config == "" {
 		resolved.Config = configPath
@@ -83,16 +93,7 @@ func applyFileConfig(dst *globalOptions, cfg fileConfig, profile string) {
 	if cfg.Fields != "" {
 		dst.Fields = cfg.Fields
 	}
-	if cfg.Output != "" {
-		switch strings.ToLower(cfg.Output) {
-		case "json":
-			dst.JSON, dst.JSONL, dst.Plain = true, false, false
-		case "jsonl":
-			dst.JSON, dst.JSONL, dst.Plain = false, true, false
-		case "plain":
-			dst.JSON, dst.JSONL, dst.Plain = false, false, true
-		}
-	}
+	applyOutputMode(dst, cfg.Output)
 }
 
 func mergeFileConfig(base, overlay fileConfig) fileConfig {
@@ -140,16 +141,7 @@ func applyEnv(dst *globalOptions) {
 	if v := env("ACAL_FIELDS"); v != "" {
 		dst.Fields = v
 	}
-	if v := env("ACAL_OUTPUT"); v != "" {
-		switch strings.ToLower(v) {
-		case "json":
-			dst.JSON, dst.JSONL, dst.Plain = true, false, false
-		case "jsonl":
-			dst.JSON, dst.JSONL, dst.Plain = false, true, false
-		case "plain":
-			dst.JSON, dst.JSONL, dst.Plain = false, false, true
-		}
-	}
+	applyOutputMode(dst, env("ACAL_OUTPUT"))
 	if v := env("ACAL_NO_INPUT"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			dst.NoInput = b
@@ -161,9 +153,6 @@ func applyEnv(dst *globalOptions) {
 }
 
 func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
-	copyIfChanged(cmd, "json", func() { dst.JSON = fromFlags.JSON })
-	copyIfChanged(cmd, "jsonl", func() { dst.JSONL = fromFlags.JSONL })
-	copyIfChanged(cmd, "plain", func() { dst.Plain = fromFlags.Plain })
 	copyIfChanged(cmd, "fields", func() { dst.Fields = fromFlags.Fields })
 	copyIfChanged(cmd, "quiet", func() { dst.Quiet = fromFlags.Quiet })
 	copyIfChanged(cmd, "verbose", func() { dst.Verbose = fromFlags.Verbose })
@@ -176,29 +165,41 @@ func applyFlags(cmd *cobra.Command, dst, fromFlags *globalOptions) {
 	copyIfChanged(cmd, "tz", func() { dst.TZ = fromFlags.TZ })
 	copyIfChanged(cmd, "timeout", func() { dst.Timeout = fromFlags.Timeout })
 	copyIfChanged(cmd, "schema-version", func() { dst.SchemaVersion = fromFlags.SchemaVersion })
+}
 
-	// If exactly one output mode flag is explicitly set, it overrides env/config output mode.
-	modeSet := 0
-	if flagValueChanged(cmd, "json") && fromFlags.JSON {
-		modeSet++
+func applyOutputMode(dst *globalOptions, value string) {
+	mode := output.Mode(strings.ToLower(value))
+	switch mode {
+	case output.ModeJSON, output.ModeJSONL, output.ModePlain:
+		dst.OutputMode = mode
 	}
-	if flagValueChanged(cmd, "jsonl") && fromFlags.JSONL {
-		modeSet++
-	}
-	if flagValueChanged(cmd, "plain") && fromFlags.Plain {
-		modeSet++
-	}
-	if modeSet == 1 {
-		if flagValueChanged(cmd, "json") && fromFlags.JSON {
-			dst.JSON, dst.JSONL, dst.Plain = true, false, false
+}
+
+func resolveOutputMode(cmd *cobra.Command, inherited output.Mode) (output.Mode, error) {
+	selected := output.ModeAuto
+	for _, mode := range []output.Mode{output.ModeJSON, output.ModeJSONL, output.ModePlain} {
+		flag := cmd.Flag(string(mode))
+		if flag == nil || !flag.Changed {
+			continue
 		}
-		if flagValueChanged(cmd, "jsonl") && fromFlags.JSONL {
-			dst.JSON, dst.JSONL, dst.Plain = false, true, false
+		enabled, err := strconv.ParseBool(flag.Value.String())
+		if err != nil {
+			return output.ModeAuto, err
 		}
-		if flagValueChanged(cmd, "plain") && fromFlags.Plain {
-			dst.JSON, dst.JSONL, dst.Plain = false, false, true
+		if enabled {
+			if selected != output.ModeAuto {
+				return output.ModeAuto, errors.New("--json, --jsonl, and --plain are mutually exclusive")
+			}
+			selected = mode
+		} else if inherited == mode {
+			// An explicit false flag clears only its matching inherited mode.
+			inherited = output.ModeAuto
 		}
 	}
+	if selected != output.ModeAuto {
+		return selected, nil
+	}
+	return inherited, nil
 }
 
 func copyIfChanged(cmd *cobra.Command, name string, fn func()) {

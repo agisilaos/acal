@@ -31,9 +31,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 		SameCalendarOnly bool      `json:"same_calendar_only"`
 	}
 
-	buildConflictRows := func(items []contract.Event, includeAllDay bool) []conflictRow {
+	buildConflictRows := func(items []contract.Event, includeAllDay bool, maxConflicts int) ([]conflictRow, bool) {
 		if len(items) < 2 {
-			return nil
+			return nil, false
 		}
 		eventsCopy := make([]contract.Event, 0, len(items))
 		for _, it := range items {
@@ -43,7 +43,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			eventsCopy = append(eventsCopy, it)
 		}
 		if len(eventsCopy) < 2 {
-			return nil
+			return nil, false
 		}
 		sort.Slice(eventsCopy, func(i, j int) bool {
 			if eventsCopy[i].Start.Equal(eventsCopy[j].Start) {
@@ -66,6 +66,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				if !overlapStart.Before(overlapEnd) {
 					continue
 				}
+				// Only mark truncation once an additional overlap is found. Stop
+				// before retaining it so dense inputs cannot accumulate O(n^2) rows.
+				if len(rows) == maxConflicts {
+					return rows, true
+				}
 				leftCal := firstNonEmpty(eventsCopy[i].CalendarName, eventsCopy[i].CalendarID)
 				rightCal := firstNonEmpty(eventsCopy[j].CalendarName, eventsCopy[j].CalendarID)
 				rows = append(rows, conflictRow{
@@ -82,7 +87,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				})
 			}
 		}
-		return rows
+		return rows, false
 	}
 
 	var listCalendars []string
@@ -183,22 +188,16 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Use valid --from/--to values", 2)
 			}
-			preds, err := parsePredicates(wheres)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
-			}
-			matchers, err := compilePredicates(preds)
-			if err != nil {
-				return failWithHint(p, contract.ErrInvalidUsage, err, "Check --where field/operator/value", 2)
-			}
-			items, err := listEventsWithTimeout(ctx, be, f)
-			if err != nil {
-				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
-			}
-			items = applyPredicates(items, matchers)
-			sortEvents(items, sortField, order)
-			if queryLimit > 0 && len(items) > queryLimit {
-				items = items[:queryLimit]
+			items, queryErr := executeQuery(ctx, be, f, wheres, sortField, order)
+			if queryErr != nil {
+				switch queryErr.stage {
+				case queryParse:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Use clauses like title~\"walk\" or calendar==\"Work\"", 2)
+				case queryApply:
+					return failWithHint(p, contract.ErrInvalidUsage, queryErr, "Check --where field/operator/value", 2)
+				default:
+					return failWithHint(p, contract.ErrBackendUnavailable, queryErr, "Run `acal doctor` for remediation", 6)
+				}
 			}
 			return successWithMeta(ctx, p, ro, items, map[string]any{"count": len(items)}, nil)
 		},
@@ -213,7 +212,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 
 	var conflictsCalendars []string
 	var conflictsFrom, conflictsTo string
-	var conflictsLimit int
+	const defaultMaxConflicts = 1000
+	const maxConflictsLimit = 10000
+	var conflictsLimit, conflictsMax int
 	var conflictsIncludeAllDay bool
 	conflicts := &cobra.Command{
 		Use:   "conflicts",
@@ -222,6 +223,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			p, be, ro, err := buildContext(cmd, opts, "events.conflicts")
 			if err != nil {
 				return err
+			}
+			if conflictsMax < 1 || conflictsMax > maxConflictsLimit {
+				err := fmt.Errorf("--max-conflicts must be between 1 and %d", maxConflictsLimit)
+				return failWithHint(p, contract.ErrInvalidUsage, err, "Narrow --from/--to or --calendar to inspect more conflicts", 2)
 			}
 			ctx, cancel := commandContext(ro)
 			defer cancel()
@@ -233,19 +238,31 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
-			rows := buildConflictRows(items, conflictsIncludeAllDay)
+			rows, truncated := buildConflictRows(items, conflictsIncludeAllDay, conflictsMax)
 			meta := map[string]any{
 				"count":           len(rows),
 				"events_scanned":  len(items),
 				"include_all_day": conflictsIncludeAllDay,
+				"max_conflicts":   conflictsMax,
+				"truncated":       truncated,
 			}
-			return successWithMeta(ctx, p, ro, rows, meta, nil)
+			var warnings []string
+			if truncated {
+				warning := fmt.Sprintf("Conflict output truncated at --max-conflicts=%d; narrow --from/--to or --calendar", conflictsMax)
+				warnings = append(warnings, warning)
+				// Plain and JSONL output have no envelope for metadata or warnings.
+				if p.EffectiveSuccessMode() != output.ModeJSON {
+					_, _ = fmt.Fprintf(p.Err, "acal: %s\n", warning)
+				}
+			}
+			return successWithMeta(ctx, p, ro, rows, meta, warnings)
 		},
 	}
 	conflicts.Flags().StringSliceVar(&conflictsCalendars, "calendar", nil, "Calendar ID or name (repeatable)")
 	conflicts.Flags().StringVar(&conflictsFrom, "from", "today", "Range start")
 	conflicts.Flags().StringVar(&conflictsTo, "to", "+30d", "Range end")
 	conflicts.Flags().IntVar(&conflictsLimit, "limit", 0, "Limit scanned events before conflict analysis")
+	conflicts.Flags().IntVar(&conflictsMax, "max-conflicts", defaultMaxConflicts, fmt.Sprintf("Maximum conflict pairs to return (1-%d); warn if truncated", maxConflictsLimit))
 	conflicts.Flags().BoolVar(&conflictsIncludeAllDay, "include-all-day", false, "Include all-day events in overlap detection")
 
 	var addCalendar, addTitle, addStart, addEnd, addDuration, addLocation, addNotes, addNotesFile, addURL, addRepeat string
@@ -375,45 +392,62 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 				patch.Start = &t
 			}
-			var current *contract.Event
-			getCurrent := func() error {
-				if current != nil {
-					return nil
-				}
-				item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
-				if getErr != nil {
-					return getErr
-				}
-				current = item
-				return nil
-			}
-			if ifMatch > 0 {
-				if getErr := getCurrent(); getErr != nil {
-					return failWithHint(p, contract.ErrNotFound, getErr, "Unable to verify sequence for --if-match-seq", 4)
-				}
-				if current.Sequence != ifMatch {
-					err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
-					return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
-				}
-			}
+			var duration time.Duration
 			if cmd.Flags().Changed("end") || cmd.Flags().Changed("duration") {
-				base := time.Now()
-				if patch.Start == nil {
-					if getErr := getCurrent(); getErr == nil && current != nil {
-						base = current.Start
+				if strings.TrimSpace(upEnd) != "" && strings.TrimSpace(upDuration) != "" {
+					return failWithHint(p, contract.ErrInvalidUsage, errors.New("use either --end or --duration, not both"), "Use --end or --duration", 2)
+				}
+				if strings.TrimSpace(upEnd) != "" {
+					end, parseErr := timeparse.ParseDateTime(upEnd, time.Now(), loc)
+					if parseErr != nil {
+						return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use --end or --duration", 2)
+					}
+					patch.End = &end
+				} else {
+					if strings.TrimSpace(upDuration) == "" {
+						return failWithHint(p, contract.ErrInvalidUsage, errors.New("missing --end or --duration"), "Use --end or --duration", 2)
+					}
+					duration, err = time.ParseDuration(upDuration)
+					if err != nil {
+						return failWithHint(p, contract.ErrInvalidUsage, err, "Use --end or --duration", 2)
+					}
+					if duration <= 0 {
+						return failWithHint(p, contract.ErrInvalidUsage, errors.New("--duration must be positive"), "Use --end or --duration", 2)
 					}
 				}
-				if current != nil && patch.Start == nil {
-					base = current.Start
+			}
+			needsStart := patch.Start == nil && (patch.End != nil || duration > 0)
+			if patch.Start != nil && patch.End != nil && !patch.End.After(*patch.Start) {
+				return failWithHint(p, contract.ErrInvalidUsage, errors.New("--end must be after --start"), "Use --end or --duration", 2)
+			}
+			var current *contract.Event
+			if !upDryRun || needsStart || ifMatch > 0 {
+				current, err = getEventByIDWithTimeout(ctx, be, args[0])
+				if err != nil {
+					if ifMatch > 0 {
+						return failWithHint(p, contract.ErrNotFound, err, "Unable to verify sequence for --if-match-seq", 4)
+					}
+					if needsStart {
+						return failWithHint(p, contract.ErrNotFound, err, "Unable to read existing start for update", 4)
+					}
+					current = nil
 				}
-				if patch.Start != nil {
-					base = *patch.Start
+			}
+			if ifMatch > 0 && current.Sequence != ifMatch {
+				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", current.Sequence, ifMatch)
+				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
+			}
+			if patch.End != nil || duration > 0 {
+				start := patch.Start
+				if needsStart {
+					start = &current.Start
 				}
-				t, e := resolveEnd(upEnd, upDuration, base, loc)
-				if e != nil {
-					return failWithHint(p, contract.ErrInvalidUsage, e, "Use --end or --duration", 2)
+				if duration > 0 {
+					end := start.Add(duration)
+					patch.End = &end
+				} else if needsStart && !patch.End.After(*start) {
+					return failWithHint(p, contract.ErrInvalidUsage, errors.New("--end must be after --start"), "Use --end or --duration", 2)
 				}
-				patch.End = &t
 			}
 			if upDryRun {
 				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, nil)
@@ -421,11 +455,6 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
 				return failWithHint(p, contract.ErrGeneric, err, "Update failed", 1)
-			}
-			if current == nil {
-				if getErr := getCurrent(); getErr != nil {
-					current = nil
-				}
 			}
 			if current != nil {
 				_ = appendHistory(historyEntry{Type: "update", EventID: args[0], Prev: current, Next: item})

@@ -93,6 +93,19 @@ func parseEventID(id string) (string, int64) {
 	return strings.Join(parts[:len(parts)-1], "@"), occ
 }
 
+// parseReadEventID distinguishes a missing occurrence from an invalid one.
+// Keep parseEventID's existing write/reminder semantics separate.
+func parseReadEventID(id string) (uid string, occurrence int64, present, valid bool) {
+	i := strings.LastIndexByte(id, '@')
+	if i < 0 {
+		return id, 0, false, false
+	}
+	uid, suffix := id[:i], id[i+1:]
+	occurrence, err := strconv.ParseInt(suffix, 10, 64)
+	valid = uid != "" && err == nil && strconv.FormatInt(occurrence, 10) == suffix
+	return uid, occurrence, true, valid
+}
+
 func trimOuterQuotes(s string) string {
 	if len(s) >= 2 && strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"") {
 		return s[1 : len(s)-1]

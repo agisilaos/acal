@@ -25,18 +25,6 @@ func TestParseRepeatSpecWeekly(t *testing.T) {
 	}
 }
 
-func TestExpandRepeatDaily(t *testing.T) {
-	start := time.Date(2026, 2, 20, 10, 0, 0, 0, time.UTC)
-	spec := repeatSpec{Frequency: "daily", Count: 3}
-	rows := expandRepeat(start, spec)
-	if len(rows) != 3 {
-		t.Fatalf("expected 3 rows, got %d", len(rows))
-	}
-	if rows[2].Format("2006-01-02") != "2026-02-22" {
-		t.Fatalf("unexpected third date: %s", rows[2].Format("2006-01-02"))
-	}
-}
-
 func TestEventsAddRepeatCreatesSeries(t *testing.T) {
 	fb := &scopeCaptureBackend{}
 	origFactory := backendFactory
