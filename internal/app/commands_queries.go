@@ -51,6 +51,9 @@ func loadSavedQueries() (map[string]savedQuery, error) {
 	if err := json.Unmarshal(raw, &store); err != nil {
 		return nil, err
 	}
+	if store == nil {
+		store = map[string]savedQuery{}
+	}
 	return store, nil
 }
 

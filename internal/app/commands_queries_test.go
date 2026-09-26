@@ -131,3 +131,50 @@ func TestQuerySaveRunThenBatchDryRunWorkflow(t *testing.T) {
 		t.Fatalf("expected no backend writes in workflow dry-run")
 	}
 }
+
+func TestQueriesNullStoreAndCorruptStore(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(queriesFilePath()), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"null\n", "[]", "broken"} {
+		t.Run(raw, func(t *testing.T) {
+			if err := os.WriteFile(queriesFilePath(), []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			for _, op := range []struct {
+				args []string
+				code int
+			}{
+				{[]string{"list"}, 0}, {[]string{"delete", "missing"}, 4}, {[]string{"run", "missing"}, 4}, {[]string{"save", "new"}, 0},
+			} {
+				cmd := NewRootCommand()
+				var out bytes.Buffer
+				cmd.SetOut(&out)
+				cmd.SetErr(&out)
+				cmd.SetArgs(append(append([]string{"queries"}, op.args...), "--json"))
+				want := op.code
+				if raw != "null\n" {
+					want = 1
+				}
+				if code := ExitCode(cmd.Execute()); code != want {
+					t.Fatalf("%v: exit=%d want=%d output=%s", op.args, code, want, &out)
+				}
+				if !json.Valid(out.Bytes()) {
+					t.Fatalf("unstructured result: %s", &out)
+				}
+			}
+			if raw == "null\n" {
+				store, err := loadSavedQueries()
+				if err != nil || len(store) != 1 || store["new"].Name != "new" {
+					t.Fatalf("store=%v err=%v", store, err)
+				}
+			} else {
+				after, err := os.ReadFile(queriesFilePath())
+				if err != nil || string(after) != raw {
+					t.Fatal("corrupt store overwritten")
+				}
+			}
+		})
+	}
+}
