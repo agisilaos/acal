@@ -2,7 +2,10 @@ package app
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -207,6 +210,149 @@ func TestQuickAddHistoryAcrossAliasesAndModes(t *testing.T) {
 						}
 					} else if !reflect.DeepEqual(redo, seed) {
 						t.Fatalf("redo changed: got %+v, want %+v", redo, seed)
+					}
+				})
+			}
+		}
+	}
+}
+
+// Echo the parsed request without touching Calendar; return backend-only fields
+// as well so projection is checked against the created snapshot.
+type quickAddOutputBackend struct {
+	scopeCaptureBackend
+	created *contract.Event
+}
+
+func (b *quickAddOutputBackend) AddEvent(_ context.Context, in backend.EventCreateInput) (*contract.Event, error) {
+	b.addCalls++
+	b.addInput = in
+	b.created = &contract.Event{ID: "created-id", Title: in.Title, Start: in.Start, End: in.End, CalendarID: "work-id", CalendarName: in.Calendar, Notes: "line\nnext\tcell\r\x1b[31m\x7f", AllDay: in.AllDay}
+	return b.created, nil
+}
+
+func TestQuickAddOutputProjection(t *testing.T) {
+	for _, alias := range []string{"quick-add", "events quick-add"} {
+		for _, dryRun := range []bool{true, false} {
+			for _, fields := range []string{"", "title,start", "end,title,calendar,id", "notes,calendar_id,all_day", "missing,title"} {
+				t.Run(fmt.Sprintf("%s/dry=%t/fields=%s", alias, dryRun, fields), func(t *testing.T) {
+					t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+					b := &quickAddOutputBackend{}
+					original := backendFactory
+					backendFactory = func(string) (backend.Backend, error) { return b, nil }
+					t.Cleanup(func() { backendFactory = original })
+					cmd := NewRootCommand()
+					var out bytes.Buffer
+					cmd.SetOut(&out)
+					cmd.SetErr(&bytes.Buffer{})
+					args := append(strings.Fields(alias), "2026-10-01 09:00 \x1b[31mReview @Work\x07 30m", "--plain", "--tz", "UTC")
+					if fields != "" {
+						args = append(args, "--fields", fields)
+					}
+					if dryRun {
+						args = append(args, "--dry-run")
+					}
+					cmd.SetArgs(args)
+					if err := cmd.Execute(); err != nil {
+						t.Fatal(err)
+					}
+					id := "created-id"
+					if dryRun {
+						id = "dry-run"
+					}
+					want := id + "\t2026-10-01T09:00:00Z\t2026-10-01T09:30:00Z\tWork\\u0007\t\\u001b[31mReview\n"
+					switch fields {
+					case "title,start":
+						want = "\\u001b[31mReview\t2026-10-01T09:00:00Z\n"
+					case "end,title,calendar,id":
+						want = "2026-10-01T09:30:00Z\t\\u001b[31mReview\tWork\\u0007\t" + id + "\n"
+					case "notes,calendar_id,all_day":
+						want = "line\\nnext\\tcell\\r\\u001b[31m\\u007f\twork-id\tfalse\n"
+						if dryRun {
+							want = "\t\tfalse\n"
+						}
+					case "missing,title":
+						want = "\t\\u001b[31mReview\n"
+					}
+					if out.String() != want {
+						t.Fatalf("got %q, want %q", out.String(), want)
+					}
+					entries, err := readHistory()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if dryRun {
+						if b.addCalls != 0 || len(entries) != 0 {
+							t.Fatal("preview mutated backend or history")
+						}
+					} else if b.addCalls != 1 || len(entries) != 1 || !reflect.DeepEqual(entries[0].Created, b.created) {
+						t.Fatalf("created snapshot was changed by rendering: %+v", entries)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestQuickAddStructuredOutputSchema(t *testing.T) {
+	for _, alias := range []string{"quick-add", "events quick-add"} {
+		for _, mode := range []string{"--json", "--jsonl"} {
+			for _, dryRun := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/dry=%t", alias, mode, dryRun), func(t *testing.T) {
+					t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+					b := &quickAddOutputBackend{}
+					original := backendFactory
+					backendFactory = func(string) (backend.Backend, error) { return b, nil }
+					t.Cleanup(func() { backendFactory = original })
+					cmd := NewRootCommand()
+					var out bytes.Buffer
+					cmd.SetOut(&out)
+					cmd.SetErr(&bytes.Buffer{})
+					input := "2026-10-01 09:00 Review @Work 30m"
+					args := append(strings.Fields(alias), input, mode, "--fields", "title,start", "--tz", "UTC")
+					if dryRun {
+						args = append(args, "--dry-run")
+					}
+					cmd.SetArgs(args)
+					if err := cmd.Execute(); err != nil {
+						t.Fatal(err)
+					}
+					var data any
+					if err := json.Unmarshal(out.Bytes(), &data); err != nil {
+						t.Fatal(err)
+					}
+					if mode == "--json" {
+						env := data.(map[string]any)
+						if env["command"] != strings.ReplaceAll(alias, " ", ".") || env["schema_version"] != contract.SchemaVersion {
+							t.Fatalf("unexpected envelope: %v", env)
+						}
+						meta := map[string]any{"count": float64(1)}
+						if dryRun {
+							meta = map[string]any{"dry_run": true}
+						}
+						if !reflect.DeepEqual(env["meta"], meta) {
+							t.Fatalf("unexpected metadata: %v", env["meta"])
+						}
+						data = env["data"]
+					}
+					var expected any = b.created
+					if dryRun {
+						in, err := parseQuickAddInput(input, time.Now(), time.UTC, "", time.Hour, false)
+						if err != nil {
+							t.Fatal(err)
+						}
+						expected = in
+					}
+					encoded, err := json.Marshal(expected)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var want any
+					if err := json.Unmarshal(encoded, &want); err != nil {
+						t.Fatal(err)
+					}
+					if !reflect.DeepEqual(data, want) {
+						t.Fatalf("wire data changed: got %v want %v", data, want)
 					}
 				})
 			}

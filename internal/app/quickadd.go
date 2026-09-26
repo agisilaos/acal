@@ -55,10 +55,15 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				_ = p.Error(contract.ErrInvalidUsage, err.Error(), `Example: acal quick-add "tomorrow 10:00 Standup @Work 30m"`)
 				return WrapPrinted(2, err)
 			}
+			if p.EffectiveSuccessMode() == output.ModePlain && len(p.Fields) == 0 {
+				p.Fields = []string{"id", "start", "end", "calendar", "title"}
+			}
 			if dryRun {
 				if p.EffectiveSuccessMode() == output.ModePlain {
-					_, _ = fmt.Fprintf(c.OutOrStdout(), "dry-run\t%s\t%s\t%s\t%s\n", in.Start.Format(time.RFC3339), in.End.Format(time.RFC3339), in.Calendar, in.Title)
-					return nil
+					return p.Success(struct {
+						backend.EventCreateInput
+						ID, Start, End string
+					}{in, "dry-run", in.Start.Format(time.RFC3339), in.End.Format(time.RFC3339)}, nil, nil)
 				}
 				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true}, nil)
 			}
@@ -71,8 +76,10 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 				_ = appendHistory(historyEntry{Type: "add", EventID: item.ID, Created: item})
 			}
 			if p.EffectiveSuccessMode() == output.ModePlain && item != nil {
-				_, _ = fmt.Fprintf(c.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n", item.ID, item.Start.Format(time.RFC3339), item.End.Format(time.RFC3339), firstNonEmpty(item.CalendarName, item.CalendarID), item.Title)
-				return nil
+				return p.Success(struct {
+					*contract.Event
+					Start, End, Calendar string
+				}{item, item.Start.Format(time.RFC3339), item.End.Format(time.RFC3339), firstNonEmpty(item.CalendarName, item.CalendarID)}, nil, nil)
 			}
 			return successWithMeta(ctx, p, ro, item, map[string]any{"count": 1}, nil)
 		},
