@@ -1,9 +1,17 @@
 # acal
 
-Experimental native work: see the [installed EventKit proof](docs/native-proof.md).
-The production backend and history remain unchanged.
-
 `acal` is a Go CLI for querying and managing Apple Calendar with human and agent-friendly output.
+
+This README documents the current `main` branch, including changes being
+prepared for v0.3.0. Homebrew installs the latest published release, which can
+differ from this development version. Check `acal version` and use the README
+at the matching release tag, such as the
+[v0.2.1 README](https://github.com/agisilaos/acal/blob/v0.2.1/README.md).
+See [releases](https://github.com/agisilaos/acal/releases) for published versions.
+
+The [installed EventKit proof](docs/native-proof.md) is an experimental
+development candidate built separately from the Homebrew release. Existing
+production commands and history retain their current backend.
 
 Released under the [MIT License](LICENSE). Binary archives include the license.
 
