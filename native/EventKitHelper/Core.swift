@@ -114,4 +114,3 @@ func alarmOffset(_ req: Request) throws -> Double? {
     guard offset.isFinite, offset <= 0, offset >= -31_536_000, offset.truncatingRemainder(dividingBy: 60) == 0 else { try fail("INVALID_USAGE", "Reminder must be whole minutes before or at start, within one year") }
     return offset
 }
-
