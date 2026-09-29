@@ -14,6 +14,16 @@ brew tap agisilaos/tap
 brew install acal
 ```
 
+If Homebrew reports that the formula is untrusted, trust acal and retry:
+
+```bash
+brew trust --formula agisilaos/tap/acal
+brew install acal
+```
+
+This trusts only the acal formula so Homebrew can load it. Older Homebrew
+versions may not require this step.
+
 Verify:
 
 ```bash
