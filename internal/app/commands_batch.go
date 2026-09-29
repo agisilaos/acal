@@ -99,6 +99,9 @@ successful earlier rows. Use --dry-run to preview without writing.`,
 						if errors.As(execErr, &outcome) {
 							result["hint"] = updateOutcomeHint
 						}
+						if hint := creationInspectionHint(execErr); hint != "" {
+							result["hint"] = hint
+						}
 					}
 					results = append(results, result)
 					if !continueOnError {

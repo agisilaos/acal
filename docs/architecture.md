@@ -82,6 +82,14 @@ against external Calendar changes. Import and batch apply sequentially;
 earlier successful operations remain when later operations fail. A dry run only
 controls that invocation and does not bind a later apply to the same file contents.
 
+Creation timeouts and cancellation do not prove that Calendar was unchanged.
+The application retains the attempted calendar, title and resolved start/end
+alongside the existing backend context metadata, reports unknown completion,
+and directs consumers to inspect Calendar before retrying. These failures do
+not append an undo entry or advance a failed history replay. Import and batch
+retain earlier confirmed creations and their recorded history. This reporting
+does not change the native launcher or its optional retry policy.
+
 Creation selects the first calendar with the supplied name. Read filters support
 IDs and names, but creation does not resolve calendar IDs. Keep this distinction
 visible in help and docs until native creation gains a different targeting model.

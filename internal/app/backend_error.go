@@ -16,6 +16,25 @@ type backendContextError struct {
 	Err      error
 }
 
+// A context failure cannot establish whether Calendar completed a creation.
+// Retain the request so every creation consumer can direct safe inspection.
+type creationContextError struct {
+	Err   error
+	Input backend.EventCreateInput
+}
+
+func (e *creationContextError) Error() string { return e.Err.Error() }
+func (e *creationContextError) Unwrap() error { return e.Err }
+
+func creationInspectionHint(err error) string {
+	var creation *creationContextError
+	if !errors.As(err, &creation) {
+		return ""
+	}
+	in := creation.Input
+	return fmt.Sprintf("Inspect Calendar before retrying; the event may already have been created. Check calendar %q, title %q, start %s, and end %s", in.Calendar, in.Title, in.Start.Format(time.RFC3339), in.End.Format(time.RFC3339))
+}
+
 func (e *backendContextError) Error() string {
 	if e == nil {
 		return "backend error"
@@ -92,6 +111,12 @@ func backendErrorMeta(err error) map[string]any {
 	}
 	if be.Deadline != nil {
 		meta["deadline"] = be.Deadline.Format(time.RFC3339)
+	}
+	var creation *creationContextError
+	if errors.As(err, &creation) {
+		meta["outcome"], meta["verified"] = "unknown", false
+		meta["calendar"], meta["title"] = creation.Input.Calendar, creation.Input.Title
+		meta["start"], meta["end"] = creation.Input.Start.Format(time.RFC3339), creation.Input.End.Format(time.RFC3339)
 	}
 	return meta
 }

@@ -887,6 +887,9 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 			hint = "Retry command; operation was canceled"
 		}
 	}
+	if creationHint := creationInspectionHint(err); creationHint != "" {
+		hint = creationHint
+	}
 	_ = printer.ErrorWithMeta(code, err.Error(), hint, meta)
 	return WrapPrinted(exitCode, err)
 }
