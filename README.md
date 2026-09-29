@@ -263,6 +263,9 @@ output = "plain"
 go build ./cmd/acal
 ```
 
+Examples use `acal` on `PATH`, as installed by Homebrew. When using the
+binary built in this checkout, replace `acal` with `./acal`.
+
 ## Testing
 
 ```bash
@@ -310,44 +313,44 @@ inside records, including exports to terminal device paths. Use `--out <file>`
 with a regular file or redirect `--plain` stdout to preserve serialized ICS bytes. JSON and JSONL retain their full payloads.
 
 ```bash
-./acal doctor --json
-./acal setup --json
-./acal status --json
-./acal version
-./acal today --json
-./acal freebusy --from today --to +7d --json
-./acal slots --from tomorrow --to +3d --between 09:00-17:00 --duration 45m --json
-./acal today --summary --plain --fields date,total,all_day,timed
-./acal week --of today --week-start monday --plain
-./acal week --summary --json
-./acal month --month 2026-02 --json
-./acal view month --month 2026-02 --summary --plain --fields date,total
-./acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
-./acal quick-add "2026-10-01 09:00 Review @Work 30m" --dry-run --plain --fields title,start --tz UTC
-./acal history list --json
-./acal history list --json --limit 10 --offset 10
-./acal history undo --dry-run --json
-./acal history redo --dry-run --json
-./acal queries save next7 --from today --to +7d --where 'title~standup' --limit 10
-./acal queries run next7 --json
-./acal events quick-add "2026-02-18 09:15 Deep Work @Personal 45m"
-./acal events list --from today --to +7d --json
-./acal events list --from today --to +7d --verbose --json
-./acal events query --from today --to +14d --where 'title~sleep' --sort start --order asc --plain --fields id,title,start,end
-./acal events conflicts --from today --to +14d --json
-./acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
-./acal events add --calendar Work --title "Standup" --start 2026-02-20T09:00 --duration 30m --repeat daily*5
-./acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1
-./acal events update <event-id> --repeat weekly:mon,wed*6 --dry-run --json
-./acal events move <event-id> --by 30m --scope auto
-./acal events move <event-id> --to 2026-02-20T14:00 --duration 45m --dry-run --json
-./acal events copy <event-id> --to 2026-02-21T09:00 --duration 30m --calendar Personal
-./acal events remind <event-id> --at -15m --json
-./acal events export --from today --to +14d --out calendar.ics
-./acal events import --file ./calendar.ics --calendar Work --dry-run --json
-./acal events batch --file ./ops.jsonl --dry-run --json
-./acal events delete <event-id> --confirm <event-id> --scope auto --no-input
-./acal events delete <event-id>   # interactive TTY confirmation prompt
+acal doctor --json
+acal setup --json
+acal status --json
+acal version
+acal today --json
+acal freebusy --from today --to +7d --json
+acal slots --from tomorrow --to +3d --between 09:00-17:00 --duration 45m --json
+acal today --summary --plain --fields date,total,all_day,timed
+acal week --of today --week-start monday --plain
+acal week --summary --json
+acal month --month 2026-02 --json
+acal view month --month 2026-02 --summary --plain --fields date,total
+acal quick-add "tomorrow 10:00 Standup @Work 30m" --dry-run --json
+acal quick-add "2026-10-01 09:00 Review @Work 30m" --dry-run --plain --fields title,start --tz UTC
+acal history list --json
+acal history list --json --limit 10 --offset 10
+acal history undo --dry-run --json
+acal history redo --dry-run --json
+acal queries save next7 --from today --to +7d --where 'title~standup' --limit 10
+acal queries run next7 --json
+acal events quick-add "2026-02-18 09:15 Deep Work @Personal 45m"
+acal events list --from today --to +7d --json
+acal events list --from today --to +7d --verbose --json
+acal events query --from today --to +14d --where 'title~sleep' --sort start --order asc --plain --fields id,title,start,end
+acal events conflicts --from today --to +14d --json
+acal events add --calendar Personal --title "1:1" --start 2026-02-10T10:00 --duration 30m
+acal events add --calendar Work --title "Standup" --start 2026-02-20T09:00 --duration 30m --repeat 'daily*5' --dry-run --json
+acal events update <event-id> --location "Room 4A" --scope auto --if-match-seq 1
+acal events update <event-id> --repeat 'weekly:mon,wed*6' --dry-run --json
+acal events move <event-id> --by 30m --scope auto
+acal events move <event-id> --to 2026-02-20T14:00 --duration 45m --dry-run --json
+acal events copy <event-id> --to 2026-02-21T09:00 --duration 30m --calendar Personal
+acal events remind <event-id> --at -15m --json
+acal events export --from today --to +14d --out calendar.ics
+acal events import --file ./calendar.ics --calendar Work --dry-run --json
+acal events batch --file ./ops.jsonl --dry-run --json
+acal events delete <event-id> --confirm <event-id> --scope auto --no-input
+acal events delete <event-id>   # interactive TTY confirmation prompt
 ```
 
 ### Batch JSONL schema
@@ -389,7 +392,7 @@ For example, save these rows as `ops.jsonl` (replace the sample IDs before writi
 ```
 
 ```bash
-./acal events batch --file ./ops.jsonl --dry-run --strict --json
+acal events batch --file ./ops.jsonl --dry-run --strict --json
 ```
 
 ICS import supports independent events only. VEVENT entries containing `RRULE`,
