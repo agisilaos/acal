@@ -309,7 +309,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				in.RepeatRule = canonicalRepeatRule(spec)
 			}
 			if addDryRun {
-				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, nil)
+				var warnings []string
+				if in.RepeatRule != "" {
+					warnings = []string{"Recurring-event writes are unsupported; this preview cannot be applied."}
+				}
+				return successWithMeta(ctx, p, ro, in, map[string]any{"dry_run": true, "count": 1, "repeat": addRepeat}, warnings)
 			}
 			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
@@ -330,7 +334,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	add.Flags().StringVar(&addNotes, "notes", "", "Notes")
 	add.Flags().StringVar(&addNotesFile, "notes-file", "", "Notes path or - for stdin")
 	add.Flags().StringVar(&addURL, "url", "", "URL")
-	add.Flags().StringVar(&addRepeat, "repeat", "", "Repeat rule: daily*5, weekly:mon,wed*6, monthly*3, yearly*2")
+	add.Flags().StringVar(&addRepeat, "repeat", "", "Repeat rule (preview only; recurring writes unsupported)")
 	add.Flags().BoolVar(&addAllDay, "all-day", false, "All-day event")
 	add.Flags().BoolVarP(&addDryRun, "dry-run", "n", false, "Preview without writing")
 
@@ -429,8 +433,12 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			}
 			var current *contract.Event
 			if !upDryRun || needsStart || hasIfMatch {
-				current, err = getEventByIDWithTimeout(ctx, be, args[0])
+				current, err = getEventForWriteWithTimeout(ctx, be, args[0], upDryRun)
 				if err != nil {
+					var rejected *backend.WriteRejectedError
+					if errors.As(err, &rejected) {
+						return failWithHint(p, contract.ErrGeneric, err, "", 1)
+					}
 					if hasIfMatch {
 						return failWithHint(p, contract.ErrNotFound, err, "Unable to verify sequence for --if-match-seq", 4)
 					}
@@ -457,7 +465,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 			}
 			if upDryRun {
-				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, nil)
+				var warnings []string
+				if patch.RepeatRule != nil && *patch.RepeatRule != "" {
+					warnings = []string{"Recurring-event writes are unsupported; this preview cannot be applied."}
+				}
+				return successWithMeta(ctx, p, ro, patch, map[string]any{"dry_run": true}, warnings)
 			}
 			item, err := updateEventWithTimeout(ctx, be, args[0], patch)
 			if err != nil {
@@ -477,9 +489,9 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	update.Flags().StringVar(&upNotes, "notes", "", "Notes")
 	update.Flags().StringVar(&upNotesFile, "notes-file", "", "Notes path or - for stdin")
 	update.Flags().StringVar(&upURL, "url", "", "URL")
-	update.Flags().StringVar(&upRepeat, "repeat", "", "Repeat metadata rule")
+	update.Flags().StringVar(&upRepeat, "repeat", "", "Repeat rule (preview only; recurring writes unsupported)")
 	update.Flags().BoolVar(&upAllDay, "all-day", false, "All-day event")
-	update.Flags().StringVar(&upScope, "scope", "auto", "Recurrence scope: auto|this|future|series")
+	update.Flags().StringVar(&upScope, "scope", "auto", "Write scope: auto|this|future|series (recurring events unsupported)")
 	update.Flags().IntVar(&ifMatch, "if-match-seq", 0, "Require matching sequence number")
 	update.Flags().BoolVarP(&upDryRun, "dry-run", "n", false, "Preview without writing")
 
@@ -527,7 +539,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 					return failWithHint(p, contract.ErrInvalidUsage, parseErr, "Use a duration like +30m, -1h, 2h", 2)
 				}
 			}
-			current, getErr := getEventByIDWithTimeout(ctx, be, args[0])
+			current, getErr := getEventForWriteWithTimeout(ctx, be, args[0], mvDryRun)
 			if getErr != nil {
 				return failWithHint(p, contract.ErrNotFound, getErr, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -574,7 +586,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	move.Flags().StringVar(&mvBy, "by", "", "Offset duration (e.g. 30m, -1h)")
 	move.Flags().StringVar(&mvEnd, "end", "", "New end datetime")
 	move.Flags().StringVar(&mvDuration, "duration", "", "New duration from start (e.g. 45m)")
-	move.Flags().StringVar(&mvScope, "scope", "auto", "Recurrence scope: auto|this|future|series")
+	move.Flags().StringVar(&mvScope, "scope", "auto", "Write scope: auto|this|future|series (recurring events unsupported)")
 	move.Flags().IntVar(&mvIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	move.Flags().BoolVarP(&mvDryRun, "dry-run", "n", false, "Preview without writing")
 
@@ -708,7 +720,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				item := &contract.Event{ID: args[0]}
 				return successWithMeta(ctx, p, ro, item, map[string]any{"dry_run": true, "scope": scope, "lookup_skipped": true}, nil)
 			}
-			item, getErr := getEventByIDWithTimeout(ctx, be, args[0])
+			item, getErr := getEventForWriteWithTimeout(ctx, be, args[0], false)
+			var rejected *backend.WriteRejectedError
+			if errors.As(getErr, &rejected) {
+				return failWithHint(p, contract.ErrGeneric, getErr, "", 1)
+			}
 			if getErr == nil && hasIfMatch && item.Sequence != delIfMatch {
 				err = fmt.Errorf("sequence mismatch: current=%d expected=%d", item.Sequence, delIfMatch)
 				return failWithHint(p, contract.ErrConcurrency, err, "Re-fetch event and retry", 7)
@@ -727,7 +743,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 	}
 	deleteCmd.Flags().BoolVarP(&delForce, "force", "f", false, "Force delete without confirmation")
 	deleteCmd.Flags().StringVar(&delConfirm, "confirm", "", "Confirm exact event ID")
-	deleteCmd.Flags().StringVar(&delScope, "scope", "auto", "Recurrence scope: auto|this|future|series")
+	deleteCmd.Flags().StringVar(&delScope, "scope", "auto", "Write scope: auto|this|future|series (recurring events unsupported)")
 	deleteCmd.Flags().IntVar(&delIfMatch, "if-match-seq", 0, "Require matching sequence number")
 	deleteCmd.Flags().BoolVarP(&delDryRun, "dry-run", "n", false, "Preview without writing")
 
@@ -760,7 +776,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				}
 				parsedOffset = &offset
 			}
-			item, err := getEventByIDWithTimeout(ctx, be, args[0])
+			item, err := getEventForWriteWithTimeout(ctx, be, args[0], remindDryRun)
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
@@ -852,6 +868,15 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 		exitCode = 6
 		kind, _ := meta["kind"].(string)
 		switch kind {
+		case "write_rejected":
+			reason, _ := meta["reason"].(string)
+			code, exitCode, hint = contract.ErrUnsupported, 2, writeRejectionHint(reason)
+			if reason == "permission" {
+				code, exitCode = contract.ErrPermissionDenied, 6
+			}
+			if reason == "unclassified" {
+				code, exitCode = contract.ErrBackendUnavailable, 6
+			}
 		case "update_applied_unverified":
 			code, exitCode, hint = contract.ErrUpdateUnverified, 1, updateOutcomeHint
 		case "update_outcome_unknown":

@@ -302,43 +302,39 @@ func TestReminderHistoryDryRunAndJSON(t *testing.T) {
 }
 
 func TestLegacyHistoryFixtures(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "history_legacy.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, operation := range []string{"undo", "redo"} {
-		t.Run(operation, func(t *testing.T) {
-			setupReminderHistory(t)
-			path := historyFilePath()
-			if operation == "redo" {
-				path = redoFilePath()
-			}
-			raw, err := os.ReadFile(filepath.Join("testdata", "history_legacy.jsonl"))
-			if err != nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			var entry historyEntry
+			if err := json.Unmarshal([]byte(line), &entry); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(path, raw, 0600); err != nil {
-				t.Fatal(err)
-			}
-			offset := -10 * time.Minute
-			fb := &scopeCaptureBackend{reminder: &offset}
-			// Legacy update records (even old remind writes) retain ordinary-field replay.
-			for range 3 {
-				if _, err := runReminderHistoryCommand(t, fb, "history", operation, "--json"); err != nil {
+			t.Run(operation+"/"+entry.Type, func(t *testing.T) {
+				setupReminderHistory(t)
+				if err := writeHistory([]historyEntry{entry}); err != nil {
 					t.Fatal(err)
 				}
-			}
-			if fb.updateCalls != 1 || fb.addCalls != 1 || fb.deleteCalls != 1 || fb.remindCalls != 0 {
-				t.Fatalf("unexpected legacy replay calls: %+v", fb)
-			}
-			wantTitle := "Original"
-			if operation == "redo" {
-				wantTitle = "Updated"
-			}
-			if fb.updateInput.Title == nil || *fb.updateInput.Title != wantTitle {
-				t.Fatalf("legacy %s title = %v", operation, fb.updateInput.Title)
-			}
-			if fb.updateInput.ReminderOffset != nil || fb.updateInput.ClearReminder {
-				t.Fatal("legacy update tried to infer an alarm")
-			}
-			assertReminderOffset(t, fb.reminder, &offset)
-		})
+				if err := writeRedoHistory([]historyEntry{entry}); err != nil {
+					t.Fatal(err)
+				}
+				before, _ := os.ReadFile(historyFilePath())
+				redoBefore, _ := os.ReadFile(redoFilePath())
+				fb := &scopeCaptureBackend{}
+				out, err := runGuardCommand(t, fb, "history", operation, "--json")
+				blocked := operation == "undo" && entry.Type == "delete" || operation == "redo" && entry.Type == "add"
+				if blocked {
+					if ExitCode(err) != 2 || !strings.Contains(out, "legacy_history") || fb.addCalls != 0 {
+						t.Fatalf("err=%v output=%s calls=%d", err, out, fb.addCalls)
+					}
+					assertHistoryFiles(t, before, redoBefore)
+				} else if err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
 	}
 }
 

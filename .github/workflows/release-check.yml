@@ -23,3 +23,6 @@ jobs:
       # release-check scripts must rely on stock runner tooling.
       - name: Run release check
         run: make release-check-ci
+
+      - name: Test native proof without Calendar writes
+        run: make native-proof-test
