@@ -14,6 +14,7 @@ Available Commands:
   help        Help about any command
   history     Inspect and undo write history
   month       List events for a month
+  native      Experimental packaged EventKit proof (JSON, owned fixtures only)
   queries     Saved query presets
   quick-add   Create an event from natural text
   setup       Run first-time setup checks and permission guidance

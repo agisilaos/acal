@@ -1,0 +1,30 @@
+Create a uniquely marked timed fixture with an optional reminder
+
+Usage:
+  acal native events add [flags]
+
+Flags:
+      --before duration   Display reminder before start (0 means at start; omitted means none)
+      --calendar string   calendar (required; dates are RFC3339 instants)
+      --end string        end (required; dates are RFC3339 instants)
+  -h, --help              help for add
+      --start string      start (required; dates are RFC3339 instants)
+      --title string      title (required; dates are RFC3339 instants)
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (v1 only) (default "v1")
+      --state-dir string        Absolute directory for isolated fixture ownership and durable operation records
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics

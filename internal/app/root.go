@@ -79,6 +79,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().DurationVar(&opts.Timeout, "timeout", 15*time.Second, "Backend call timeout (e.g. 10s, 1m, 0 to disable)")
 	root.PersistentFlags().StringVar(&opts.SchemaVersion, "schema-version", contract.SchemaVersion, "Output schema version (v1 only)")
 
+	root.AddCommand(newNativeCmd(opts))
 	root.AddCommand(newSetupCmd(opts))
 	root.AddCommand(newStatusCmd(opts))
 	root.AddCommand(newVersionCmd())
@@ -358,6 +359,12 @@ func renderTopLevelError(cmd *cobra.Command, err error) {
 // Recover only rendering preferences from malformed argv. Known flag values
 // are consumed so a literal value such as --notes --json is not a mode flag.
 func errorOutputMode(root *cobra.Command, args []string) output.Mode {
+	selectedNative, _, _ := root.Find(args)
+	for c := selectedNative; c != nil; c = c.Parent() {
+		if c.Name() == "native" && c.Parent() == root {
+			return output.ModeJSON
+		}
+	}
 	preferences := &cobra.Command{}
 	preferences.Flags().Bool("json", false, "")
 	preferences.Flags().Bool("jsonl", false, "")

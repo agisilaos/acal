@@ -9,6 +9,17 @@ in [ADR 0001](adr/0001-restrict-recurring-writes-for-v0.3.0.md).
 The [README](../README.md) owns command syntax and output contracts; this document
 maps the implementation and the boundaries that changes need to preserve.
 
+The proposed next-milestone migration is documented separately in
+[EventKit migration design](eventkit-migration-design.md). It retains the Go CLI
+and qualifies a compiled Swift helper; this page continues to describe the
+implemented production backend until that migration is qualified. The separate
+experimental `acal native` route uses `internal/nativeproof` and the packaged Swift
+helper; it never dispatches production history or the legacy backend. See the
+[native proof guide](native-proof.md) for scope and installation. The experimental
+Homebrew formula preserves the executable/helper relative layout under a separate
+`acal-native-proof` command; ADR 0005 selects ad-hoc distribution without mandatory
+notarization, subject to installed deployment qualification.
+
 ## Ownership and data flow
 
 | Owner | Responsibility | Main sources |

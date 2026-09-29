@@ -1,5 +1,8 @@
 # acal
 
+Experimental native work: see the [installed EventKit proof](docs/native-proof.md).
+The production backend and history remain unchanged.
+
 `acal` is a Go CLI for querying and managing Apple Calendar with human and agent-friendly output.
 
 Released under the [MIT License](LICENSE). Binary archives include the license.
