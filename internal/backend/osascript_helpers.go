@@ -54,8 +54,8 @@ func runAppleScript(ctx context.Context, lines []string, args ...string) (string
 	return runAppleScriptCommand(ctx, cmdArgs, retries, backoff)
 }
 
-// Updates must never retry a script that may already have changed Calendar.
-func runUpdateAppleScript(ctx context.Context, lines []string, args ...string) (string, error) {
+// Writes must never retry a script that may already have changed Calendar.
+func runWriteAppleScript(ctx context.Context, lines []string, args ...string) (string, error) {
 	cmdArgs := []string{"-s", "h"}
 	for _, line := range lines {
 		cmdArgs = append(cmdArgs, "-e", line)

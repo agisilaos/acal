@@ -29,7 +29,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 	if err != nil {
 		return nil, err
 	}
-	out, err := runAppleScript(ctx, append(append(appleScriptDateHandlers(), alarmScriptHandlers()...), []string{
+	out, err := runWriteAppleScript(ctx, append(append(appleScriptDateHandlers(), alarmScriptHandlers()...), []string{
 		`on run argv`,
 		`set calName to item 1 of argv`,
 		`set titleText to item 2 of argv`,
@@ -259,7 +259,7 @@ func (b *OsaScriptBackend) UpdateEvent(ctx context.Context, id string, in EventU
 	if err != nil {
 		return nil, err
 	}
-	out, err := runUpdateAppleScript(ctx, lines, args...)
+	out, err := runWriteAppleScript(ctx, lines, args...)
 	if err != nil {
 		return nil, &UpdateOutcomeError{Err: err}
 	}
@@ -286,7 +286,7 @@ func (b *OsaScriptBackend) DeleteEvent(ctx context.Context, id string, scope Rec
 	if occ > 0 {
 		occUnix = strconv.FormatInt(occ+cocoaEpochOffset, 10)
 	}
-	out, err := runUpdateAppleScript(ctx, append(append(appleScriptDateHandlers(), writeGuardScriptHandlers()...), []string{
+	out, err := runWriteAppleScript(ctx, append(append(appleScriptDateHandlers(), writeGuardScriptHandlers()...), []string{
 		`on run argv`,
 		`set uidText to item 1 of argv`,
 		`set scopeText to item 2 of argv`,

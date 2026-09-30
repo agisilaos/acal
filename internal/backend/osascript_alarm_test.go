@@ -45,7 +45,7 @@ func TestNativeAlarmValues(t *testing.T) {
 		`set end of observations to (alarms's |count|() as integer) as text`,
 		`end repeat`, `return my resultJSON(observations)`,
 	)
-	out, err := runUpdateAppleScript(ctx, lines)
+	out, err := runWriteAppleScript(ctx, lines)
 	if err != nil {
 		t.Fatal(err)
 	}

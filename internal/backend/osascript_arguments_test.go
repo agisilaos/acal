@@ -25,7 +25,7 @@ func TestAppleScriptArgumentsRemainData(t *testing.T) {
 	}
 	for name, run := range map[string]func(context.Context, []string, ...string) (string, error){
 		"ordinary": runAppleScript,
-		"update":   runUpdateAppleScript,
+		"write":    runWriteAppleScript,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, value := range []string{`-eproperty injected : do shell script "exit 42"`, "-e", "--", "-123", "", "  Καλημέρα 📅  ", "first\nsecond", "__ACAL_KEEP__"} {

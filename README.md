@@ -165,6 +165,7 @@ Recommended automation patterns:
   - JSON/JSONL errors and batch-row metadata preserve `phase: backend.add_event`, `kind: timeout|canceled`, and any timeout `deadline`. They also include `outcome: unknown`, `verified: false`, and the attempted `calendar`, `title`, `start`, and `end` (RFC3339 values with the resolved offset). They make no `applied` assertion.
   - Existing error codes and exit statuses are retained: quick-add uses `GENERIC_FAILURE` and exit `1`; add, copy, import, and history recreation use `BACKEND_UNAVAILABLE` and exit `6`; batch errors exit `1`. Import errors also retain their confirmed-creation progress metadata.
   - An uncertain creation does not add an undo entry or advance history replay stacks. Earlier confirmed creations in an import or batch remain applied and recorded. Inspect Calendar before retrying even when history has no entry for the attempted event.
+  - Native creation scripts are never automatically retried, including when `ACAL_OSASCRIPT_RETRIES` is configured.
 - Update results and uncertain outcomes:
   - Native updates read the complete mutable event fields directly from the object changed by Calendar, preserving notes, URL, and whitespace. They do not use the occurrence cache to construct the result. The returned occurrence ID follows the resulting start time; undo/redo follows returned IDs after moves.
   - A completed write without a verified result exits `1` with `UPDATE_APPLIED_UNVERIFIED` and metadata `applied: true`, `verified: false`. Transport failures or timeouts with uncertain completion exit `1` with `UPDATE_OUTCOME_UNKNOWN`, `verified: false`, and no `applied` assertion. Batch rows expose the corresponding `meta.kind` (`update_applied_unverified` or `update_outcome_unknown`) and inspection hint.
@@ -486,7 +487,7 @@ with `--include-all-day`. A scan limit can omit busy events and conflicts.
 - `--verbose` includes per-command backend timing diagnostics and `meta.timings` in JSON responses.
 - Timeout/cancel errors now include backend phase context (for example `backend.list_events timed out...`) to make hang diagnosis faster.
 - JSON error payloads include structured timeout/cancel metadata under `meta` (`phase`, `kind`, `deadline`) and map these failures to `BACKEND_UNAVAILABLE` for consistent automation handling.
-- Optional transient AppleScript retry controls (off by default):
+- Optional transient AppleScript retry controls for reads (off by default; creation, update, and deletion scripts never retry):
   - `ACAL_OSASCRIPT_RETRIES` (integer retries; default `0`)
   - `ACAL_OSASCRIPT_RETRY_BACKOFF` (duration; default `200ms`)
 - Persistence files live in `$XDG_CONFIG_HOME/acal/`, or `$HOME/.config/acal/` when `XDG_CONFIG_HOME` is unset. `--config` and `ACAL_CONFIG` select an additional configuration layer; they do not relocate history, redo, or saved queries:

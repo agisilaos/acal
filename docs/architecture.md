@@ -87,8 +87,9 @@ The application retains the attempted calendar, title and resolved start/end
 alongside the existing backend context metadata, reports unknown completion,
 and directs consumers to inspect Calendar before retrying. These failures do
 not append an undo entry or advance a failed history replay. Import and batch
-retain earlier confirmed creations and their recorded history. This reporting
-does not change the native launcher or its optional retry policy.
+retain earlier confirmed creations and their recorded history. Creation, update
+and deletion scripts use a launcher that never retries; optional native retries
+apply only to reads.
 
 Creation selects the first calendar with the supplied name. Read filters support
 IDs and names, but creation does not resolve calendar IDs. Keep this distinction

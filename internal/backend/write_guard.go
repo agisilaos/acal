@@ -47,7 +47,7 @@ func (b *OsaScriptBackend) CheckEventWrite(ctx context.Context, id string) error
 	}
 	lines := append(appleScriptDateHandlers(), writeGuardScriptHandlers()...)
 	lines = append(lines, `on run argv`, `return my independentWriteCheck(item 1 of argv, item 2 of argv as real)`, `end run`)
-	out, err := runUpdateAppleScript(ctx, lines, uid, strconv.FormatInt(seconds, 10))
+	out, err := runWriteAppleScript(ctx, lines, uid, strconv.FormatInt(seconds, 10))
 	if err != nil {
 		return fmt.Errorf("%w: %v", &WriteRejectedError{Reason: "unclassified"}, err)
 	}

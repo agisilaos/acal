@@ -33,7 +33,7 @@ func TestNativeWriteAccessPolicy(t *testing.T) {
 	lines = append(lines, `repeat with statusValue in {0, 1, 2, 4}`, `if my writeAccessCheck(statusValue as integer) is not "ACAL_WRITE_REJECTED:permission" then error "unsafe permission policy"`, `end repeat`, `if my writeAccessCheck(3) is not "" then error "full access rejected"`, `return "ok"`)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := runUpdateAppleScript(ctx, lines)
+	out, err := runWriteAppleScript(ctx, lines)
 	if err != nil || out != "ok\n" {
 		t.Fatalf("out=%q err=%v", out, err)
 	}

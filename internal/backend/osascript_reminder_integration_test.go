@@ -26,7 +26,7 @@ func TestNativeReminderRoundTrip(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()
-		_, err := runUpdateAppleScript(cleanupCtx, []string{
+		_, err := runWriteAppleScript(cleanupCtx, []string{
 			`on run argv`, `tell application "Calendar"`,
 			`if exists (first calendar whose name is item 1 of argv) then delete (first calendar whose name is item 1 of argv)`,
 			`end tell`, `end run`,
@@ -35,7 +35,7 @@ func TestNativeReminderRoundTrip(t *testing.T) {
 			t.Errorf("disposable calendar cleanup: %v", err)
 		}
 	})
-	out, err := runUpdateAppleScript(ctx, append(append(updateResultScriptHandlers(), `use framework "EventKit"`),
+	out, err := runWriteAppleScript(ctx, append(append(updateResultScriptHandlers(), `use framework "EventKit"`),
 		`on run argv`, `tell application "Calendar"`,
 		`set c to make new calendar with properties {name:item 1 of argv}`,
 		`set d to (current date) + 604800`,
@@ -79,7 +79,7 @@ func TestNativeReminderRoundTrip(t *testing.T) {
 		if err != nil || (got == nil) != (wanted == nil) || (got != nil && *got != *wanted) {
 			t.Fatalf("%s: reminder=%v want=%v err=%v", minutes, got, wanted, err)
 		}
-		counts, err := runUpdateAppleScript(ctx, []string{
+		counts, err := runWriteAppleScript(ctx, []string{
 			`use framework "EventKit"`, `use scripting additions`, `on run argv`,
 			`tell application "Calendar"`, `set c to first calendar whose name is item 1 of argv`,
 			`set eventCount to count of events of c`, `end tell`,
@@ -127,12 +127,12 @@ func TestNativeReminderRecurrenceRejection(t *testing.T) {
 			t.Cleanup(func() {
 				ctx, stop := context.WithTimeout(context.Background(), 20*time.Second)
 				defer stop()
-				_, err := runUpdateAppleScript(ctx, []string{`on run argv`, `tell application "Calendar"`, `if exists (first calendar whose name is item 1 of argv) then delete (first calendar whose name is item 1 of argv)`, `end tell`, `end run`}, name)
+				_, err := runWriteAppleScript(ctx, []string{`on run argv`, `tell application "Calendar"`, `if exists (first calendar whose name is item 1 of argv) then delete (first calendar whose name is item 1 of argv)`, `end tell`, `end run`}, name)
 				if err != nil {
 					t.Errorf("cleanup: %v", err)
 				}
 			})
-			out, err := runUpdateAppleScript(ctx, append(updateResultScriptHandlers(),
+			out, err := runWriteAppleScript(ctx, append(updateResultScriptHandlers(),
 				`on run argv`, `tell application "Calendar"`,
 				`set c to make new calendar with properties {name:item 1 of argv}`,
 				`set d to (current date) + 604800`,
@@ -157,7 +157,7 @@ func TestNativeReminderRecurrenceRejection(t *testing.T) {
 			}
 			targetUID := identity[0]
 			if scenario == "detached" {
-				targetUID, err = runUpdateAppleScript(ctx, []string{
+				targetUID, err = runWriteAppleScript(ctx, []string{
 					`use framework "EventKit"`, `use scripting additions`, `on run argv`,
 					`set store to current application's EKEventStore's alloc()'s init()`,
 					`set anchorEvent to store's calendarItemWithIdentifier:(item 1 of argv)`,
@@ -194,7 +194,7 @@ func TestNativeReminderRecurrenceRejection(t *testing.T) {
 				checkRejected(be.DeleteEvent(ctx, id, scope))
 			}
 
-			out, err = runUpdateAppleScript(ctx, append(append(updateResultScriptHandlers(), `use framework "EventKit"`),
+			out, err = runWriteAppleScript(ctx, append(append(updateResultScriptHandlers(), `use framework "EventKit"`),
 				`on run argv`, `set store to current application's EKEventStore's alloc()'s init()`,
 				`set calendars to {}`, `repeat with c in (store's calendarsForEntityType:0)`, `if (c's |title|() as text) is item 1 of argv then set end of calendars to contents of c`, `end repeat`,
 				`set startValue to item 2 of argv as real`,
