@@ -77,9 +77,10 @@ provider, launch context, signing/notarization status, commands, exit statuses,
 redacted output, native readback and cleanup. Authoritative readback means local
 EventKit state, not confirmation that iCloud or another device has synchronized.
 
-The current host is macOS 27.2 beta (26B5091g), with Swift from Xcode-beta. An Apple Development
-identity was observed, but no Developer ID Application identity is available and
-notarization is no longer required for the selected Homebrew path. No supported
+The recorded proof host is macOS 27.2 beta (26B5091g), with Swift from Xcode-beta.
+Its evidence is preserved in the [consumer review](reviews/native-proof-consumer-review.md).
+An Apple Development identity was observed, but no Developer ID Application
+identity was available on that host. Notarization is no longer required for the selected Homebrew path. No supported
 stable test environment has been verified.
 Local beta tests can inform implementation; they cannot qualify the support matrix.
 

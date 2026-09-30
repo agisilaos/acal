@@ -292,3 +292,19 @@ The release/migration qualification gate remains **FAIL**: stable macOS, Intel,
 iCloud, fresh consent, Terminal and public HTTPS delivery remain unverified.
 Notarization is no longer a required gate under ADR 0005. No commit, push, production
 tap update or release was performed.
+
+## Repository status — 2026-09-30
+
+The candidates, failures and publication status above describe the historical
+runs. The native proof, canonical-ID and signed-zero fixes, and Homebrew lifecycle
+safeguards landed in [PR #42](https://github.com/agisilaos/acal/pull/42), merged
+2026-09-29 at `02a1938`. Production creation-recovery and installation/documentation
+follow-ups landed in [PR #43](https://github.com/agisilaos/acal/pull/43), merged
+2026-09-30 at `0f85538`.
+
+The proof is committed on `main`; its installed deployment qualification remains
+incomplete. The [current qualification matrix](../native-proof.md#remaining-qualification)
+separates recorded beta/local evidence from stable macOS, Intel, iCloud, fresh
+consent, Terminal and public HTTPS obligations. This status correction adds no
+live qualification evidence and does not establish production migration or a
+published release.

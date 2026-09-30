@@ -102,8 +102,8 @@ bounds waiting but cannot roll back a write.
 `acal version` now identifies the native proof by source hash, Git revision, dirty
 state and UTC build time. Each archive includes `BUILD-INFO.json` with full source
 hashes and compiler versions. The two architecture packages share a source identity;
-archive checksums identify their separate outputs. This identifies an uncommitted
-candidate without misrepresenting it as a clean release commit.
+archive checksums identify their separate outputs. Build metadata distinguishes a
+clean commit from a candidate containing uncommitted changes.
 
 Run the no-save checks before packaging:
 
@@ -193,3 +193,27 @@ existing-grant success in one launcher does not prove cross-launcher persistence
 A local tap install on a beta host does not qualify all downloaded software or
 public delivery. Preserve these limits in the evidence rather than requiring users
 to remove quarantine attributes or disable system protections.
+
+The proof and its local Homebrew lifecycle landed in [PR #42](https://github.com/agisilaos/acal/pull/42).
+The recorded results remain limited to the combinations tested in the
+[consumer review](reviews/native-proof-consumer-review.md); merge and routine CI
+do not establish additional deployment coverage.
+
+| Qualification | Recorded evidence | Remaining acceptance |
+| --- | --- | --- |
+| Installed CRUD, alarms and IDs | Passed on macOS 27.2 beta, arm64, one local calendar, desktop-agent execution | Repeat installed workflows on the advertised stable combinations |
+| Homebrew install and upgrade | Passed with local file URLs and different helper bytes/kegs in the same environment | Qualify public HTTPS delivery and stable-system installation/upgrade |
+| Calendar consent | Existing Full Access observed across the tested upgrade | Test first consent, denied/restricted access and each intended launcher |
+| Terminal execution | Unverified for the installed native proof | Run the installed public commands from Terminal |
+| iCloud | Unverified | Use an exact disposable iCloud fixture and record provider identity; source type alone is insufficient |
+| Intel execution | Both architecture archives compile; no installed Intel execution evidence | Run the installed workflow on Intel if advertised |
+| Production migration | Experimental fixtures only; no production undo/redo or legacy migration | Complete the bounded reads, revisions, recovery/history and migration slices |
+
+Retain package hashes/build metadata, OS/build, architecture, provider, launcher,
+consent state, public commands, outcomes, native readback and exact cleanup for
+each run. Homebrew lifecycle evidence must also show unchanged production acal and
+installed formula inventory. Track remaining deployment work in
+[#39](https://github.com/agisilaos/acal/issues/39) and
+[#41](https://github.com/agisilaos/acal/issues/41). The separate v0.3.0 production
+release still needs its own supported stable-macOS archive qualification under
+[#34](https://github.com/agisilaos/acal/issues/34).
