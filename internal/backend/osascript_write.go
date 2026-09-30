@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`set allDayText to item 8 of argv`,
 		`set repeatText to item 9 of argv`,
 		`set reminderText to item 10 of argv`,
-		`if reminderText is not "__ACAL_KEEP__" then my requireAlarmAccess()`,
+		`if reminderText is not "__ACAL_KEEP__" and (current application's EKEventStore's authorizationStatusForEntityType:0) as integer is not 3 then return "ACAL_WRITE_REJECTED:permission"`,
 		`set startDate to (my nativeDate(startText as integer))`,
 		`set endDate to (my nativeDate(endText as integer))`,
 		`tell application "Calendar"`,
@@ -49,7 +50,7 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`try`,
 		`set targetCal to first calendar whose name is calName`,
 		`on error`,
-		`error "calendar not found"`,
+		`return "ACAL_CREATE_REJECTED:calendar_not_found"`,
 		`end try`,
 		`set newEvent to make new event at end of events of targetCal with properties {summary:titleText, start date:startDate, end date:endDate}`,
 		`if allDayText is "true" then set allday event of newEvent to true`,
@@ -70,11 +71,21 @@ func (b *OsaScriptBackend) AddEvent(ctx context.Context, in EventCreateInput) (*
 		`end run`,
 	}...), in.Calendar, in.Title, startUnix, endUnix, in.Location, in.Notes, in.URL, allDay, repeatText, reminderMins)
 	if err != nil {
+		var commandErr *appleScriptCommandError
+		if errors.As(err, &commandErr) && commandErr.Started {
+			return nil, &CreationOutcomeError{Err: err}
+		}
 		return nil, err
 	}
+	if strings.TrimSpace(out) == writeRejectedPrefix+"permission" {
+		return nil, &WriteRejectedError{Reason: "permission"}
+	}
+	if strings.TrimSpace(out) == "ACAL_CREATE_REJECTED:calendar_not_found" {
+		return nil, fmt.Errorf("calendar not found")
+	}
 	uid := strings.TrimSpace(trimOuterQuotes(strings.TrimSpace(out)))
-	if uid == "" {
-		return nil, fmt.Errorf("failed to create event")
+	if uid == "" || strings.HasPrefix(uid, writeRejectedPrefix) || strings.HasPrefix(uid, "ACAL_CREATE_REJECTED:") {
+		return nil, &CreationOutcomeError{Err: fmt.Errorf("native creation result unavailable or invalid")}
 	}
 	item, ferr := b.findByUID(ctx, uid, in.Start, in.End)
 	if ferr == nil {

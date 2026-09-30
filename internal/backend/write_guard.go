@@ -16,7 +16,7 @@ func (e *WriteRejectedError) Error() string {
 	case "recurring":
 		return "recurring-event writes are unsupported in this release; no event was changed"
 	case "permission":
-		return "Full Calendar Access is required to classify events before writing; no event was changed"
+		return "Full Calendar Access is required before writing; no event was changed"
 	case "legacy_history":
 		return "this history entry has no recurrence classification; recreating it is unsupported; no event was changed"
 	default:

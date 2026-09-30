@@ -140,7 +140,7 @@ func failImport(p output.Printer, err error, created []contract.Event, item int)
 	code, exitCode := contract.ErrGeneric, 1
 	if meta == nil {
 		meta = map[string]any{}
-	} else {
+	} else if meta["kind"] != "creation_outcome_unknown" {
 		code, exitCode = contract.ErrBackendUnavailable, 6
 	}
 	meta["created_ids"], meta["count"], meta["failed_item"] = ids, len(ids), item

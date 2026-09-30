@@ -16,18 +16,18 @@ type backendContextError struct {
 	Err      error
 }
 
-// A context failure cannot establish whether Calendar completed a creation.
+// An uncertain failure cannot establish whether Calendar completed a creation.
 // Retain the request so every creation consumer can direct safe inspection.
-type creationContextError struct {
+type creationAttemptError struct {
 	Err   error
 	Input backend.EventCreateInput
 }
 
-func (e *creationContextError) Error() string { return e.Err.Error() }
-func (e *creationContextError) Unwrap() error { return e.Err }
+func (e *creationAttemptError) Error() string { return e.Err.Error() }
+func (e *creationAttemptError) Unwrap() error { return e.Err }
 
 func creationInspectionHint(err error) string {
-	var creation *creationContextError
+	var creation *creationAttemptError
 	if !errors.As(err, &creation) {
 		return ""
 	}
@@ -102,17 +102,19 @@ func backendErrorMeta(err error) map[string]any {
 	}
 
 	var be *backendContextError
-	if !errors.As(err, &be) || be == nil {
+	var nativeCreation *backend.CreationOutcomeError
+	var meta map[string]any
+	if errors.As(err, &be) {
+		meta = map[string]any{"phase": be.Phase, "kind": be.Kind}
+		if be.Deadline != nil {
+			meta["deadline"] = be.Deadline.Format(time.RFC3339)
+		}
+	} else if errors.As(err, &nativeCreation) {
+		meta = map[string]any{"phase": "backend.add_event", "kind": "creation_outcome_unknown"}
+	} else {
 		return nil
 	}
-	meta := map[string]any{
-		"phase": be.Phase,
-		"kind":  be.Kind,
-	}
-	if be.Deadline != nil {
-		meta["deadline"] = be.Deadline.Format(time.RFC3339)
-	}
-	var creation *creationContextError
+	var creation *creationAttemptError
 	if errors.As(err, &creation) {
 		meta["outcome"], meta["verified"] = "unknown", false
 		meta["calendar"], meta["title"] = creation.Input.Calendar, creation.Input.Title

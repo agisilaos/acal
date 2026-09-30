@@ -420,12 +420,16 @@ func TestEventsImportTimezoneWrites(t *testing.T) {
 
 type importProgressBackend struct {
 	scopeCaptureBackend
-	failAt int
+	failAt  int
+	failErr error
 }
 
 func (b *importProgressBackend) AddEvent(_ context.Context, in backend.EventCreateInput) (*contract.Event, error) {
 	b.addCalls++
 	if b.addCalls == b.failAt {
+		if b.failErr != nil {
+			return nil, b.failErr
+		}
 		return nil, fmt.Errorf("injected import failure")
 	}
 	return &contract.Event{ID: fmt.Sprintf("created-%d", b.addCalls), Title: in.Title, Start: in.Start, End: in.End}, nil
@@ -437,12 +441,14 @@ func TestImportRecordsAndReportsProgress(t *testing.T) {
 			name                string
 			failAt, want, code  int
 			dry, historyFailure bool
+			failErr             error
 		}{
 			{name: "success", want: 2}, {name: "first fails", failAt: 1, code: 1}, {name: "second fails", failAt: 2, want: 1, code: 1}, {name: "preview", dry: true}, {name: "history fails", want: 1, code: 1, historyFailure: true},
+			{name: "native second failure", failAt: 2, want: 1, code: 1, failErr: &backend.CreationOutcomeError{Err: fmt.Errorf("AppleEvent timed out (-1712)")}},
 		} {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-				fb := &importProgressBackend{failAt: tc.failAt}
+				fb := &importProgressBackend{failAt: tc.failAt, failErr: tc.failErr}
 				orig := backendFactory
 				backendFactory = func(string) (backend.Backend, error) { return fb, nil }
 				t.Cleanup(func() { backendFactory = orig })
@@ -481,9 +487,11 @@ func TestImportRecordsAndReportsProgress(t *testing.T) {
 					if mode != "--plain" {
 						var env struct {
 							Meta struct {
-								Count int
-								IDs   []string `json:"created_ids"`
-								Item  int      `json:"failed_item"`
+								Count   int
+								IDs     []string `json:"created_ids"`
+								Item    int      `json:"failed_item"`
+								Kind    string   `json:"kind"`
+								Outcome string   `json:"outcome"`
 							}
 						}
 						if err := json.Unmarshal(errOut.Bytes(), &env); err != nil {
@@ -491,6 +499,9 @@ func TestImportRecordsAndReportsProgress(t *testing.T) {
 						}
 						if env.Meta.Count != tc.want || len(env.Meta.IDs) != tc.want || env.Meta.Item < 1 {
 							t.Fatalf("progress: %s", &errOut)
+						}
+						if tc.failErr != nil && (env.Meta.Kind != "creation_outcome_unknown" || env.Meta.Outcome != "unknown") {
+							t.Fatalf("lost native uncertainty: %s", &errOut)
 						}
 					}
 				}

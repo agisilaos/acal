@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,6 +65,15 @@ func runWriteAppleScript(ctx context.Context, lines []string, args ...string) (s
 	return runAppleScriptCommand(ctx, append(cmdArgs, args...), 0, 0)
 }
 
+type appleScriptCommandError struct {
+	Message string
+	Err     error
+	Started bool
+}
+
+func (e *appleScriptCommandError) Error() string { return "osascript failed: " + e.Message }
+func (e *appleScriptCommandError) Unwrap() error { return e.Err }
+
 func runAppleScriptCommand(ctx context.Context, cmdArgs []string, retries int, backoff time.Duration) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt <= retries; attempt++ {
@@ -76,7 +86,7 @@ func runAppleScriptCommand(ctx context.Context, cmdArgs []string, retries int, b
 		if msg == "" {
 			msg = err.Error()
 		}
-		lastErr = fmt.Errorf("osascript failed: %s", msg)
+		lastErr = &appleScriptCommandError{Message: msg, Err: errors.Join(err, ctx.Err()), Started: cmd.Process != nil}
 		if attempt == retries || !isTransientAppleScriptError(msg) {
 			break
 		}

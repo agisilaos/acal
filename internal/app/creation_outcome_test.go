@@ -79,7 +79,7 @@ func TestCreationContextFailureAfterSideEffect(t *testing.T) {
 
 func TestCreationConsumersReportUnknownOutcome(t *testing.T) {
 	for _, name := range []string{"quick-add", "events quick-add", "add", "copy", "batch", "import", "undo", "redo"} {
-		for _, failure := range []error{context.DeadlineExceeded, context.Canceled} {
+		for _, failure := range []error{context.DeadlineExceeded, context.Canceled, &backend.CreationOutcomeError{Err: errors.New("AppleEvent timed out (-1712)")}} {
 			t.Run(name+"/"+failure.Error(), func(t *testing.T) {
 				setupReminderHistory(t)
 				start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
@@ -105,7 +105,8 @@ func TestCreationConsumersReportUnknownOutcome(t *testing.T) {
 				be := &creationFailureBackend{scopeCaptureBackend: scopeCaptureBackend{getEvent: event}, err: failure}
 				out, errOut, cmdErr := runCreationCommand(t, be, append(creationCommandArgs(t, name), "--json", "--tz", "UTC")...)
 				wantExit := 6
-				if name == "quick-add" || name == "events quick-add" || name == "batch" {
+				var nativeOutcome *backend.CreationOutcomeError
+				if errors.As(failure, &nativeOutcome) || name == "quick-add" || name == "events quick-add" || name == "batch" {
 					wantExit = 1
 				}
 				if ExitCode(cmdErr) != wantExit || be.addCalls != 1 || len(be.created) != 1 {
@@ -138,7 +139,7 @@ func TestCreationConsumersReportUnknownOutcome(t *testing.T) {
 						t.Fatalf("invalid error envelope: %s (%v)", errOut, err)
 					}
 					wantCode := contract.ErrBackendUnavailable
-					if name == "quick-add" || name == "events quick-add" {
+					if errors.As(failure, &nativeOutcome) || name == "quick-add" || name == "events quick-add" {
 						wantCode = contract.ErrGeneric
 					}
 					if env.Error.Code != wantCode {
@@ -153,6 +154,8 @@ func TestCreationConsumersReportUnknownOutcome(t *testing.T) {
 				kind := "timeout"
 				if failure == context.Canceled {
 					kind = "canceled"
+				} else if errors.As(failure, &nativeOutcome) {
+					kind = "creation_outcome_unknown"
 				}
 				if meta["kind"] != kind {
 					t.Fatalf("kind=%v want=%s", meta["kind"], kind)
@@ -268,21 +271,59 @@ func TestCreationOrdinaryErrorsAndRejections(t *testing.T) {
 }
 
 func TestCreationFailureJSONLAndPlain(t *testing.T) {
-	for _, name := range []string{"quick-add", "events quick-add", "add"} {
-		for _, mode := range []string{"--jsonl", "--plain"} {
-			t.Run(name+"/"+mode, func(t *testing.T) {
-				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-				be := &creationFailureBackend{err: context.DeadlineExceeded}
-				out, errOut, err := runCreationCommand(t, be, append(creationCommandArgs(t, name), mode, "--tz", "UTC")...)
-				if err == nil || out != "" || !strings.Contains(errOut, "Inspect Calendar before retrying") {
-					t.Fatalf("err=%v stdout=%s stderr=%s", err, out, errOut)
-				}
-				if mode == "--jsonl" {
-					var env contract.ErrorEnvelope
-					if err := json.Unmarshal([]byte(errOut), &env); err != nil {
-						t.Fatal(err)
+	for _, failure := range []error{context.DeadlineExceeded, &backend.CreationOutcomeError{Err: errors.New("native alarm write failed")}} {
+		for _, name := range []string{"quick-add", "events quick-add", "add"} {
+			for _, mode := range []string{"--jsonl", "--plain"} {
+				t.Run(name+"/"+mode+"/"+failure.Error(), func(t *testing.T) {
+					t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+					be := &creationFailureBackend{err: failure}
+					out, errOut, err := runCreationCommand(t, be, append(creationCommandArgs(t, name), mode, "--tz", "UTC")...)
+					if err == nil || out != "" || !strings.Contains(errOut, "Inspect Calendar before retrying") {
+						t.Fatalf("err=%v stdout=%s stderr=%s", err, out, errOut)
 					}
-					assertCreationUncertainty(t, env.Meta, env.Error.Hint)
+					if mode == "--jsonl" {
+						var env contract.ErrorEnvelope
+						if err := json.Unmarshal([]byte(errOut), &env); err != nil {
+							t.Fatal(err)
+						}
+						assertCreationUncertainty(t, env.Meta, env.Error.Hint)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestCreationNativeTimeoutThroughCLI(t *testing.T) {
+	for _, name := range []string{"quick-add", "add"} {
+		for _, timeout := range []string{"", "0", "5s"} {
+			t.Run(name+"/timeout="+timeout, func(t *testing.T) {
+				setupReminderHistory(t)
+				dir := t.TempDir()
+				count := filepath.Join(dir, "calls")
+				t.Setenv("ACAL_CREATE_TEST_COUNT", count)
+				t.Setenv("ACAL_OSASCRIPT_RETRIES", "3")
+				t.Setenv("PATH", dir)
+				stub := "#!/bin/sh\nprintf x >> \"$ACAL_CREATE_TEST_COUNT\"\necho 'AppleEvent timed out (-1712)'\nexit 1\n"
+				if err := os.WriteFile(filepath.Join(dir, "osascript"), []byte(stub), 0700); err != nil {
+					t.Fatal(err)
+				}
+				args := append(creationCommandArgs(t, name), "--tz", "UTC", "--json")
+				if timeout != "" {
+					args = append(args, "--timeout", timeout)
+				}
+				out, errOut, err := runCreationCommand(t, backend.NewOsaScriptBackend(), args...)
+				var env contract.ErrorEnvelope
+				if parseErr := json.Unmarshal([]byte(errOut), &env); parseErr != nil || out != "" || ExitCode(err) != 1 || env.Error.Code != contract.ErrGeneric {
+					t.Fatalf("error=%v parse=%v stdout=%s stderr=%s", err, parseErr, out, errOut)
+				}
+				assertCreationUncertainty(t, env.Meta, env.Error.Hint)
+				if env.Meta["kind"] != "creation_outcome_unknown" || !strings.Contains(env.Error.Message, "(-1712)") {
+					t.Fatalf("native diagnostic lost: %+v", env)
+				}
+				calls, readErr := os.ReadFile(count)
+				if readErr != nil || string(calls) != "x" {
+					t.Fatalf("attempts=%q error=%v", calls, readErr)
 				}
 			})
 		}

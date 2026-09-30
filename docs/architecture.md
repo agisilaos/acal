@@ -82,9 +82,13 @@ against external Calendar changes. Import and batch apply sequentially;
 earlier successful operations remain when later operations fail. A dry run only
 controls that invocation and does not bind a later apply to the same file contents.
 
-Creation timeouts and cancellation do not prove that Calendar was unchanged.
+Creation timeouts, cancellation and failures from a launched native script do not
+prove that Calendar was unchanged. The native launcher retains whether the child
+started; confirmed launch failures remain ordinary errors. Creation uses explicit
+pre-write results for missing calendars and reminder permissions; other native
+failures and missing results report unknown completion without claiming applied.
 The application retains the attempted calendar, title and resolved start/end
-alongside the existing backend context metadata, reports unknown completion,
+alongside context or native outcome metadata, reports unknown completion,
 and directs consumers to inspect Calendar before retrying. These failures do
 not append an undo entry or advance a failed history replay. Import and batch
 retain earlier confirmed creations and their recorded history. Creation, update

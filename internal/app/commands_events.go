@@ -863,7 +863,7 @@ func failWithHint(printer output.Printer, code contract.ErrorCode, err error, hi
 		err = errors.New("unknown error")
 	}
 	meta := backendErrorMeta(err)
-	if meta != nil {
+	if meta != nil && meta["kind"] != "creation_outcome_unknown" {
 		code = contract.ErrBackendUnavailable
 		exitCode = 6
 		kind, _ := meta["kind"].(string)
