@@ -69,6 +69,11 @@ func newQuickAddCommand(opts *globalOptions, use, short, commandName string) *co
 			}
 			item, err := addEventWithTimeout(ctx, be, in)
 			if err != nil {
+				if hint := creationInspectionHint(err); hint != "" {
+					// Preserve quick-add's existing runtime exit code and error code.
+					_ = p.ErrorWithMeta(contract.ErrGeneric, err.Error(), hint, backendErrorMeta(err))
+					return WrapPrinted(1, err)
+				}
 				_ = p.Error(contract.ErrGeneric, err.Error(), "Check calendar name and permissions")
 				return WrapPrinted(1, err)
 			}

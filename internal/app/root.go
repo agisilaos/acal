@@ -278,6 +278,9 @@ func addEventWithTimeout(ctx context.Context, be backend.Backend, in backend.Eve
 		return be.AddEvent(ctx, in)
 	})
 	err = annotateBackendError(ctx, "backend.add_event", err)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		err = &creationContextError{Err: err, Input: in}
+	}
 	recordTiming(ctx, "backend.add_event", time.Since(start))
 	return v, err
 }

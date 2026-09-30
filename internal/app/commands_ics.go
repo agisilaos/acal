@@ -145,6 +145,9 @@ func failImport(p output.Printer, err error, created []contract.Event, item int)
 	}
 	meta["created_ids"], meta["count"], meta["failed_item"] = ids, len(ids), item
 	hint := fmt.Sprintf("Import stopped at item %d; %d confirmed creations: %q. Inspect Calendar and history before retrying; the failed attempt may also have completed. Undo recorded creations individually or delete by ID; retrying the whole file can duplicate events", item, len(ids), ids)
+	if creationHint := creationInspectionHint(err); creationHint != "" {
+		hint += ". " + creationHint
+	}
 	_ = p.ErrorWithMeta(code, err.Error(), hint, meta)
 	return WrapPrinted(exitCode, err)
 }
