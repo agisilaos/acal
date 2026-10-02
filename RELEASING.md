@@ -1,6 +1,22 @@
 # Releasing
 
+## Go toolchain
+
+Release checks, dry runs and publication select Go 1.27.1 through
+`RELEASE_GO_TOOLCHAIN` in `scripts/release-config.sh`. Release/current CI uses
+that same version, and `go.mod` requires Go 1.27.1. Go downloads and verifies
+a required toolchain when automatic toolchain selection is enabled.
+
 Releases are prepared by an agent, reviewed by a human, and published from a clean macOS checkout of the default branch.
+
+## Local verification
+
+Run `make verify` during development. It checks the pinned local helper bundle,
+module metadata, portability, formatting, static analysis, tests, docs, all
+command help snapshots and the native proof fixtures without Calendar access.
+Module validation uses disposable metadata and leaves `go.mod` and `go.sum`
+unchanged. Native package, Homebrew upgrade and live Calendar smoke qualification
+remain separate opt-in workflows described in the [native proof guide](docs/native-proof.md).
 
 ## Prepare the changelog
 
@@ -31,7 +47,7 @@ make release-dry-run VERSION=vX.Y.Z
 make release VERSION=vX.Y.Z
 ```
 
-`release-check` validates the clean worktree, version, changelog, tests, documentation, module metadata, formatting, and version-stamped binary. `release-dry-run` builds both macOS archives and checksums, extracts the approved changelog section as release notes, and renders the Homebrew formula without remote writes.
+`release-check` validates the clean worktree, version and changelog, runs `make verify`, then checks the version-stamped binary. `release-dry-run` builds both macOS archives with their license and checksums, extracts the approved changelog section as release notes, and renders and syntax-checks the Homebrew formula without remote writes. Publication requires the `main` branch and validates the selected existing tap branch before creating a tag.
 
 Before the final publish command, exercise the candidate binary extracted from
 the dry-run archive on a Mac with Calendar Automation permission and Full Calendar
@@ -55,12 +71,16 @@ The final command creates and pushes the tag, publishes the GitHub Release with 
 
 Before publishing, verify that Git `origin`, the repository selected by `gh`,
 and any `GITHUB_REPO` override identify the intended release repository. Tag
-pushes use `origin`, `gh release create` uses its repository context, and generated
+pushes use `origin`, `gh release create` uses the explicit intended repository, and generated
 download URLs use `GITHUB_REPO` or the repository derived from `origin`. The
 Homebrew tap has its own `HOMEBREW_TAP_URL` / `HOMEBREW_TAP_REPO` and branch settings.
 Human review is a workflow requirement; the script does not record approval or
 bind a dry run to a later publish. Keep the reviewed source, notes, and target
 configuration unchanged between those steps.
+
+If publication stops, follow [release recovery](docs/release-recovery.md) using
+the original retained artifacts and reported phase outcomes. Inspect remote state
+before attempting a missing step.
 
 ## Changelog policy
 

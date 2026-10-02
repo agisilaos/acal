@@ -1,0 +1,28 @@
+Import independent events from ICS. Entries containing RRULE, RDATE, EXDATE, or RECURRENCE-ID are skipped with warnings. Use --strict to reject warnings before any writes.
+
+Usage:
+  acal events import [flags]
+
+Flags:
+      --calendar string   Target calendar for imported events
+  -n, --dry-run           Preview import without writing
+      --file string       ICS file path or - for stdin
+  -h, --help              help for import
+      --strict            Treat parser warnings as errors
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (v1 only) (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics

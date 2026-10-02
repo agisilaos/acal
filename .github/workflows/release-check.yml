@@ -16,8 +16,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Use the release toolchain; compatibility stays in each repo's normal CI.
-          go-version: "1.26.x"
+          # Keep CI aligned with the release toolchain and go.mod.
+          go-version: "1.27.1"
 
       # Intentionally no extra dependency install step (brew/apt).
       # release-check scripts must rely on stock runner tooling.

@@ -1,0 +1,31 @@
+{
+  "files": {
+    "scripts/cli-shared/changelog-context.sh": {
+      "mode": "0755",
+      "sha256": "4d70be9261d448821843b1b207bcdfff02ae54160ffeadaea88f0335427a8628"
+    },
+    "scripts/cli-shared/changelog-section.py": {
+      "mode": "0755",
+      "sha256": "6ec0956a458760e613eaab90f00b27b4b2d539dbed1eda40e041d7125fdba529"
+    },
+    "scripts/cli-shared/docs-contract-check.py": {
+      "mode": "0755",
+      "sha256": "0e664679c8272d3286171196cdbbe83cb54243495a27445a5a4de75250b6b4e5"
+    },
+    "scripts/cli-shared/module-check.sh": {
+      "mode": "0755",
+      "sha256": "b2019625c416eed09fe14d70a632e6dd143808d42d1642fbc4ffed9d13f7864f"
+    },
+    "scripts/cli-shared/release-core.sh": {
+      "mode": "0755",
+      "sha256": "55d27a1acc970ca8f17cdcaa87f7e2c07d84166f00fe2e4c9f2b6b532e72b6a6"
+    },
+    "scripts/cli-shared/release.sh": {
+      "mode": "0755",
+      "sha256": "c3756bd98694cd8417ec3d19c76aaa44a38c3d27213f6f7de51fd1b291169ea3"
+    }
+  },
+  "schema_version": 1,
+  "source_fingerprint": "816f217b3a5c95477b24e3fb8ba1f3db5470654441b71b16e5385c9cb5b73290",
+  "template_revision": "sha256:816f217b3a5c95477b24e3fb8ba1f3db5470654441b71b16e5385c9cb5b73290"
+}
