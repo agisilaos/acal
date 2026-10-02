@@ -1,9 +1,56 @@
-# output_file<TAB>command args
+# output_file<TAB>command args; covers every public command path
 root.txt	--help
-events-remind.txt	events remind --help
-events-batch.txt	events batch --help
-events-query.txt	events query --help
-queries-save.txt	queries save --help
+agenda.txt	agenda --help
+calendars.txt	calendars --help
+completion.txt	completion --help
+doctor.txt	doctor --help
+events.txt	events --help
+freebusy.txt	freebusy --help
+history.txt	history --help
+month.txt	month --help
 native.txt	native --help
+queries.txt	queries --help
+quick-add.txt	quick-add --help
+setup.txt	setup --help
+slots.txt	slots --help
+status.txt	status --help
+today.txt	today --help
+version.txt	version --help
+view.txt	view --help
+week.txt	week --help
+calendars-list.txt	calendars list --help
+events-add.txt	events add --help
+events-batch.txt	events batch --help
+events-conflicts.txt	events conflicts --help
+events-copy.txt	events copy --help
+events-delete.txt	events delete --help
+events-export.txt	events export --help
+events-import.txt	events import --help
+events-list.txt	events list --help
+events-move.txt	events move --help
+events-query.txt	events query --help
+events-quick-add.txt	events quick-add --help
+events-remind.txt	events remind --help
+events-search.txt	events search --help
+events-show.txt	events show --help
+events-update.txt	events update --help
+history-list.txt	history list --help
+history-redo.txt	history redo --help
+history-undo.txt	history undo --help
+native-calendars.txt	native calendars --help
 native-events.txt	native events --help
+native-setup.txt	native setup --help
+queries-delete.txt	queries delete --help
+queries-list.txt	queries list --help
+queries-run.txt	queries run --help
+queries-save.txt	queries save --help
+status-explain.txt	status explain --help
+view-month.txt	view month --help
+view-today.txt	view today --help
+view-week.txt	view week --help
 native-add.txt	native events add --help
+native-events-delete.txt	native events delete --help
+native-events-list.txt	native events list --help
+native-events-remind.txt	native events remind --help
+native-events-show.txt	native events show --help
+native-events-update.txt	native events update --help

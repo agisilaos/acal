@@ -1,0 +1,30 @@
+Detect overlapping events in a time range
+
+Usage:
+  acal events conflicts [flags]
+
+Flags:
+      --calendar strings    Calendar ID/name (repeatable CSV; use IDs or CSV quotes for names containing commas)
+      --from string         Range start (default "today")
+  -h, --help                help for conflicts
+      --include-all-day     Include all-day events in overlap detection
+      --limit int           Limit scanned events before conflict analysis
+      --max-conflicts int   Maximum conflict pairs to return (1-10000); warn if truncated (default 1000)
+      --to string           Range end (default "+30d")
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (v1 only) (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics

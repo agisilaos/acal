@@ -1,0 +1,44 @@
+Event resources
+
+Usage:
+  acal events [flags]
+  acal events [command]
+
+Available Commands:
+  add         Create an event
+  batch       Apply add/update/delete operations from JSONL
+  conflicts   Detect overlapping events in a time range
+  copy        Copy an event to a new time
+  delete      Delete an event
+  export      Export events to ICS
+  import      Import events from ICS
+  list        List events
+  move        Move an event to a new time
+  query       Agent-focused deterministic query
+  quick-add   Create an event from natural text
+  remind      Set or clear a display alarm for an event
+  search      Search events
+  show        Show one event
+  update      Update an event
+
+Flags:
+  -h, --help   help for events
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (v1 only) (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics
+
+Use "acal events [command] --help" for more information about a command.

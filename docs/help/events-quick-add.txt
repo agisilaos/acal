@@ -1,0 +1,28 @@
+Create an event from natural text
+
+Usage:
+  acal events quick-add <text> [flags]
+
+Flags:
+      --all-day           Create an all-day event
+      --calendar string   Default calendar if @Calendar is missing
+  -n, --dry-run           Preview without writing
+      --duration string   Default duration if missing in text (default "1h")
+  -h, --help              help for quick-add
+
+Global Flags:
+      --backend string          Backend: osascript (eventkit is not implemented) (default "osascript")
+      --config string           Config file path
+      --fail-on-degraded        Fail if backend health is degraded
+      --fields string           Projected fields, comma-separated
+      --json                    Output structured JSON
+      --jsonl                   Output newline-delimited JSON
+      --no-color                Disable color output
+      --no-input                Disable prompts
+      --plain                   Output stable plain text
+      --profile string          Config profile (default "default")
+  -q, --quiet                   Reduce success output
+      --schema-version string   Output schema version (v1 only) (default "v1")
+      --timeout duration        Backend call timeout (e.g. 10s, 1m, 0 to disable) (default 15s)
+      --tz string               IANA timezone for dates and output (empty uses system local)
+  -v, --verbose                 Verbose diagnostics

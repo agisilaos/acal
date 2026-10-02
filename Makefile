@@ -1,4 +1,4 @@
-.PHONY: build test vet fmt fmt-check check-help docs-check changelog-context release-check release-check-ci release release-dry-run
+.PHONY: build test vet fmt fmt-check verify check-help update-help docs-check changelog-context release-check release-check-ci release release-dry-run
 
 build:
 	go build -o acal ./cmd/acal
@@ -10,13 +10,19 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w cmd/acal/*.go internal/**/*.go
+	gofmt -w cmd internal tools
 
 fmt-check:
-	@test -z "$$(gofmt -l cmd internal)"
+	@test -z "$$(gofmt -l cmd internal tools)"
+
+verify:
+	./scripts/verify.sh
 
 check-help:
 	./scripts/check-help.sh
+
+update-help:
+	./scripts/update-help.sh
 
 docs-check:
 	./scripts/docs-check.sh

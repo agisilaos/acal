@@ -271,6 +271,7 @@ binary built in this checkout, replace `acal` with `./acal`.
 ## Testing
 
 ```bash
+make verify
 go test ./...
 go test ./internal/backend -bench ListEventsViaSQLite -run '^$' -benchmem
 make docs-check
@@ -287,9 +288,11 @@ make release-dry-run VERSION=vX.Y.Z
 make release VERSION=vX.Y.Z
 ```
 
-Every new changelog bullet links to its pull request or direct commit. The approved changelog section becomes the GitHub Release notes. The dry run builds both macOS archives and checksums and renders the Homebrew formula without remote writes.
+Every new changelog bullet links to its pull request or direct commit. The approved changelog section becomes the GitHub Release notes. The dry run builds both macOS archives with their license and checksums and syntax-checks the Homebrew formula without remote writes. Publication validates the selected tap branch before creating a tag.
 
 See `RELEASING.md` for the full runbook. Release scripts are `scripts/changelog-context.sh`, `scripts/release-check.sh`, and `scripts/release.sh`.
+
+For an interrupted publication, follow the [release recovery runbook](docs/release-recovery.md) with the retained original artifacts.
 
 ## Examples
 
