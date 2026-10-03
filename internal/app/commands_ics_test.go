@@ -596,3 +596,70 @@ func TestAllDayExportRoundTripInSelectedTimezone(t *testing.T) {
 		})
 	}
 }
+
+func TestICSMixedDateTypes(t *testing.T) {
+	for _, dates := range []string{
+		"DTSTART;VALUE=DATE:20261101\nDTEND:20261102T100000Z",
+		"DTSTART:20261101T090000Z\nDTEND;VALUE=DATE:20261102",
+	} {
+		t.Run(dates, func(t *testing.T) {
+			mixed := "BEGIN:VEVENT\n" + dates + "\nEND:VEVENT\n"
+			valid := "BEGIN:VEVENT\nDTSTART:20261103T090000Z\nDTEND:20261103T100000Z\nEND:VEVENT\n"
+			for _, raw := range []string{mixed, valid + mixed} {
+				items, warnings := parseICS(raw, "Work", time.UTC)
+				want := 0
+				if raw != mixed {
+					want = 1
+				}
+				if len(items) != want || len(warnings) != 1 {
+					t.Fatalf("items=%v warnings=%v", items, warnings)
+				}
+				dir := t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", dir)
+				path := filepath.Join(dir, "mixed.ics")
+				if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+					t.Fatal(err)
+				}
+				fb := &scopeCaptureBackend{}
+				orig := backendFactory
+				backendFactory = func(string) (backend.Backend, error) { return fb, nil }
+				defer func() { backendFactory = orig }()
+				cmd := NewRootCommand()
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs([]string{"events", "import", "--file", path, "--calendar", "Work", "--tz", "UTC", "--strict", "--json"})
+				if err := cmd.Execute(); ExitCode(err) != 2 || fb.addCalls != 0 {
+					t.Fatalf("strict import err=%v writes=%d", err, fb.addCalls)
+				}
+			}
+		})
+	}
+}
+
+func TestICSCompatibleDateTypes(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, dates string
+		allDay      bool
+		duration    time.Duration
+	}{
+		{"all-day DST", "DTSTART;VALUE=DATE:20260329\nDTEND;VALUE=DATE:20260330", true, 23 * time.Hour},
+		{"UTC", "DTSTART:20261101T090000Z\nDTEND:20261101T100000Z", false, time.Hour},
+		{"floating", "DTSTART:20261101T090000\nDTEND:20261101T100000", false, time.Hour},
+		{"named zone", "DTSTART;TZID=Europe/Berlin:20261101T090000\nDTEND;TZID=Europe/Berlin:20261101T100000", false, time.Hour},
+		{"different forms same type", "DTSTART;TZID=Europe/Berlin:20261101T090000\nDTEND:20261101T090000Z", false, time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			items, warnings := parseICS("BEGIN:VEVENT\n"+tc.dates+"\nEND:VEVENT\n", "Work", loc)
+			if len(items) != 1 || len(warnings) != 0 {
+				t.Fatalf("items=%v warnings=%v", items, warnings)
+			}
+			if items[0].AllDay != tc.allDay || items[0].End.Sub(items[0].Start) != tc.duration {
+				t.Fatalf("got=%+v", items[0])
+			}
+		})
+	}
+}
