@@ -596,3 +596,30 @@ func TestAllDayExportRoundTripInSelectedTimezone(t *testing.T) {
 		})
 	}
 }
+
+func TestICSTextRoundTrip(t *testing.T) {
+	for _, text := range []string{"spaces , semicolon; backslash\\ newline\n東京 🎵", `literal\n and \N`, " leading and trailing ", "   "} {
+		t.Run(text, func(t *testing.T) {
+			event := contract.Event{ID: "synthetic", Title: text, Location: text, Notes: text, Start: time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC), End: time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)}
+			items, warnings := parseICS(buildICS([]contract.Event{event}, time.UTC), "Work", time.UTC)
+			if len(items) != 1 || len(warnings) != 0 {
+				t.Fatalf("items=%v warnings=%v", items, warnings)
+			}
+			if got := items[0]; got.Title != text || got.Location != text || got.Notes != text {
+				t.Fatalf("text=%q got=%+v", text, got)
+			}
+		})
+	}
+}
+
+func TestICSUnfoldsBeforeDecodingTextOnly(t *testing.T) {
+	raw := "BEGIN:VEVENT\r\nDTSTART:20261101T090000Z\r\nDTEND:20261101T100000Z\r\nSUMMARY:  東京\\,\r\n 🎵\\;\\Nnext  \r\nDESCRIPTION:literal\\\\n and unknown\\q\r\nURL:https://example.test/a\\n?q=x,y\r\nEND:VEVENT\r\n"
+	items, warnings := parseICS(raw, "Work", time.UTC)
+	if len(items) != 1 || len(warnings) != 0 {
+		t.Fatalf("items=%v warnings=%v", items, warnings)
+	}
+	got := items[0]
+	if got.Title != "  東京,🎵;\nnext  " || got.Notes != `literal\n and unknown\q` || got.URL != `https://example.test/a\n?q=x,y` {
+		t.Fatalf("got=%+v", got)
+	}
+}
