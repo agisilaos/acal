@@ -400,6 +400,11 @@ For example, save these rows as `ops.jsonl` (replace the sample IDs before writi
 acal events batch --file ./ops.jsonl --dry-run --strict --json
 ```
 
+ICS import preserves SUMMARY, LOCATION, and DESCRIPTION whitespace and decodes
+iCalendar TEXT escapes after unfolding continuation lines. Literal backslashes,
+commas, semicolons, and escaped newlines survive export/import for independent
+events; URL values are not treated as TEXT.
+
 ICS import supports independent events only. VEVENT entries containing `RRULE`,
 `RDATE`, `EXDATE`, or `RECURRENCE-ID` are skipped with warnings rather than
 flattened into one-off appointments. `--strict` rejects a file with any parser
