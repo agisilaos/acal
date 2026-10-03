@@ -242,8 +242,8 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		}
 		start, allDayStart, okStart := parseICSDate(kv["DTSTART"], loc)
 		end, allDayEnd, okEnd := parseICSDate(kv["DTEND"], loc)
-		if !okStart || !okEnd || !end.After(start) {
-			warnings = append(warnings, "skipped VEVENT with invalid or unsupported DTSTART/DTEND (check VALUE and IANA TZID)")
+		if !okStart || !okEnd || allDayStart != allDayEnd || !end.After(start) {
+			warnings = append(warnings, "skipped VEVENT with invalid or unsupported DTSTART/DTEND (check matching VALUE types and IANA TZID)")
 			return
 		}
 		items = append(items, backend.EventCreateInput{
@@ -254,7 +254,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 			Location: unescapeICSText(kv["LOCATION"]),
 			Notes:    unescapeICSText(kv["DESCRIPTION"]),
 			URL:      strings.TrimSpace(kv["URL"]),
-			AllDay:   allDayStart || allDayEnd,
+			AllDay:   allDayStart,
 		})
 	}
 

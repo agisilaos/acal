@@ -551,6 +551,10 @@ calendar names are ambiguous for creation.
 
 ### ICS import date support
 
+DTSTART and DTEND must both be DATE values or both be DATE-TIME values. Mixed
+types are skipped with a warning; `--strict` rejects the whole file before any
+event is created. All-day end dates remain exclusive, including across DST.
+
 ICS import accepts UTC date-times (`20260220T090000Z`), floating date-times,
 and `VALUE=DATE` all-day dates. `VALUE=DATE-TIME` is also supported. Floating
 values and all-day dates use `--tz`; date-times with `TZID` use the installed
