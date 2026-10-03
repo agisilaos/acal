@@ -174,13 +174,13 @@ func buildICS(items []contract.Event, loc *time.Location) string {
 			b.WriteString("DTSTART:" + e.Start.UTC().Format("20060102T150405Z") + "\r\n")
 			b.WriteString("DTEND:" + e.End.UTC().Format("20060102T150405Z") + "\r\n")
 		}
-		if strings.TrimSpace(e.Title) != "" {
+		if e.Title != "" {
 			b.WriteString("SUMMARY:" + escapeICSText(e.Title) + "\r\n")
 		}
-		if strings.TrimSpace(e.Location) != "" {
+		if e.Location != "" {
 			b.WriteString("LOCATION:" + escapeICSText(e.Location) + "\r\n")
 		}
-		if strings.TrimSpace(e.Notes) != "" {
+		if e.Notes != "" {
 			b.WriteString("DESCRIPTION:" + escapeICSText(e.Notes) + "\r\n")
 		}
 		if strings.TrimSpace(e.URL) != "" {
@@ -195,6 +195,11 @@ func buildICS(items []contract.Event, loc *time.Location) string {
 func escapeICSText(v string) string {
 	replacer := strings.NewReplacer("\\", "\\\\", ";", "\\;", ",", "\\,", "\n", "\\n", "\r", "")
 	return replacer.Replace(v)
+}
+
+// Replacement is single-pass so an escaped backslash followed by n stays literal.
+func unescapeICSText(v string) string {
+	return strings.NewReplacer(`\\`, `\`, `\n`, "\n", `\N`, "\n", `\,`, ",", `\;`, ";").Replace(v)
 }
 
 func readICSInput(path string) (string, error) {
@@ -231,7 +236,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 				return
 			}
 		}
-		title := strings.TrimSpace(kv["SUMMARY"])
+		title := unescapeICSText(kv["SUMMARY"])
 		if title == "" {
 			title = "Untitled"
 		}
@@ -246,15 +251,15 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 			Title:    title,
 			Start:    start,
 			End:      end,
-			Location: strings.TrimSpace(kv["LOCATION"]),
-			Notes:    strings.TrimSpace(kv["DESCRIPTION"]),
+			Location: unescapeICSText(kv["LOCATION"]),
+			Notes:    unescapeICSText(kv["DESCRIPTION"]),
 			URL:      strings.TrimSpace(kv["URL"]),
 			AllDay:   allDayStart,
 		})
 	}
 
 	for _, line := range lines {
-		s := strings.TrimSpace(line)
+		s := line
 		switch s {
 		case "BEGIN:VEVENT":
 			inEvent = true
@@ -274,7 +279,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 			continue
 		}
 		keyRaw := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
+		value := parts[1]
 		key := strings.ToUpper(keyRaw)
 		if strings.Contains(keyRaw, ";") {
 			key = strings.ToUpper(strings.SplitN(keyRaw, ";", 2)[0])
