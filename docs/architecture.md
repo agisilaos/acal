@@ -48,7 +48,8 @@ detection. Non-context read failures can fall back to AppleScript; cancellation
 and deadline failures do not. Calendar can publish cache changes after a write
 returns, so read-only connection freshness does not imply immediate native-cache
 freshness. Planning uses overlap selection; ordinary listing retains start-range
-selection. Exact occurrence IDs couple a UID with its Cocoa-epoch start.
+selection. Unicode lowercase filtering runs
+inside SQLite before LIMIT. Exact occurrence IDs couple a UID with its Cocoa-epoch start.
 
 Calendar enumeration and mutations use fixed AppleScript source with values passed
 as arguments. Both launchers put `--` between trusted interpreter options/source

@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"math"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/agis/acal/internal/contract"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 const cocoaEpochOffset = int64(978307200)
@@ -24,6 +25,17 @@ type OsaScriptBackend struct{}
 func NewOsaScriptBackend() *OsaScriptBackend { return &OsaScriptBackend{} }
 
 var calendarReadDBCache sync.Map
+
+func init() {
+	// SQLite's built-in lower() only folds ASCII. Keep Unicode matching in
+	// the query so filtering still happens before LIMIT without extra reads.
+	sqlite.MustRegisterDeterministicScalarFunction("acal_lower", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		if args[0] == nil {
+			return nil, nil
+		}
+		return strings.ToLower(fmt.Sprint(args[0])), nil
+	})
+}
 
 func (b *OsaScriptBackend) Doctor(ctx context.Context) ([]contract.DoctorCheck, error) {
 	checks := []contract.DoctorCheck{}
@@ -172,7 +184,7 @@ func buildListEventsQuery(f EventFilter) string {
 		}
 		if len(calVals) > 0 {
 			in := strings.Join(calVals, ",")
-			calendarClause = fmt.Sprintf("\n  AND (lower(COALESCE(c.UUID, CAST(c.ROWID AS TEXT))) IN (%s) OR lower(COALESCE(c.title, '')) IN (%s))", in, in)
+			calendarClause = fmt.Sprintf("\n  AND (acal_lower(COALESCE(c.UUID, CAST(c.ROWID AS TEXT))) IN (%s) OR acal_lower(COALESCE(c.title, '')) IN (%s))", in, in)
 		}
 	}
 	queryClause := ""
@@ -180,13 +192,13 @@ func buildListEventsQuery(f EventFilter) string {
 		p := sqlLikeLiteral(q)
 		switch strings.ToLower(strings.TrimSpace(f.Field)) {
 		case "", "all":
-			queryClause = fmt.Sprintf("\n  AND (lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\' OR lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\' OR lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\')", p, p, p)
+			queryClause = fmt.Sprintf("\n  AND (acal_lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\' OR acal_lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\' OR acal_lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\')", p, p, p)
 		case "title":
-			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\'", p)
+			queryClause = fmt.Sprintf("\n  AND acal_lower(COALESCE(ci.summary, '')) LIKE %s ESCAPE '\\'", p)
 		case "location":
-			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\'", p)
+			queryClause = fmt.Sprintf("\n  AND acal_lower(COALESCE(l.title, '')) LIKE %s ESCAPE '\\'", p)
 		case "notes":
-			queryClause = fmt.Sprintf("\n  AND lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\'", p)
+			queryClause = fmt.Sprintf("\n  AND acal_lower(COALESCE(ci.description, '')) LIKE %s ESCAPE '\\'", p)
 		default:
 			queryClause = "\n  AND 1=0"
 		}
