@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/agis/acal/internal/backend"
+	"github.com/agis/acal/internal/contract"
 )
 
 func previewICSImport(t *testing.T, raw string) []backend.EventCreateInput {
@@ -52,5 +54,35 @@ func TestEventsImportPreservesEventTextWithAlarms(t *testing.T) {
 	}
 	if items[0].Title != "Project review" || items[0].Notes != "Bring the project plan" {
 		t.Fatalf("event text replaced by alarm: title=%q notes=%q", items[0].Title, items[0].Notes)
+	}
+}
+
+func TestEventsExportImportPreservesURL(t *testing.T) {
+	const originalURL = "https://example.com/a;b?x=1,2"
+	originalFactory := backendFactory
+	backendFactory = func(string) (backend.Backend, error) {
+		return &scopeCaptureBackend{events: []contract.Event{{
+			ID: "url-event", Title: "Review", URL: originalURL,
+			Start: time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC),
+			End:   time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC),
+		}}}, nil
+	}
+	t.Cleanup(func() { backendFactory = originalFactory })
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "export.ics")
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"events", "export", "--from", "2026-11-01", "--to", "2026-11-01", "--tz", "UTC", "--out", path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := previewICSImport(t, string(raw))
+	if len(items) != 1 || items[0].URL != originalURL {
+		t.Fatalf("export/import changed URL: %+v", items)
 	}
 }

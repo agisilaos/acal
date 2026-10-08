@@ -184,7 +184,10 @@ func buildICS(items []contract.Event, loc *time.Location) string {
 			b.WriteString("DESCRIPTION:" + escapeICSText(e.Notes) + "\r\n")
 		}
 		if strings.TrimSpace(e.URL) != "" {
-			b.WriteString("URL:" + escapeICSText(e.URL) + "\r\n")
+			// URI values do not use TEXT escaping. Keep line breaks in data
+			// from becoming additional properties in the exported document.
+			uri := strings.NewReplacer("\r", "%0D", "\n", "%0A").Replace(e.URL)
+			b.WriteString("URL:" + uri + "\r\n")
 		}
 		b.WriteString("END:VEVENT\r\n")
 	}
