@@ -130,3 +130,19 @@ func TestEventsImportResolvesDSTUsingICalendarRules(t *testing.T) {
 		})
 	}
 }
+
+func TestEventsImportAcceptsCaseInsensitiveComponentProperties(t *testing.T) {
+	raw := "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\n" +
+		"DTSTART:20261101T090000Z\nDTEND:20261101T100000Z\nSUMMARY:First event\nEND:VEVENT\n" +
+		"begin:VEVENT\ndtstart:20261102T090000Z\ndtend:20261102T100000Z\n" +
+		"summary:Second event\ndescription:Event notes\n" +
+		"BeGiN:valarm\nACTION:DISPLAY\nTRIGGER:-PT15M\nDESCRIPTION:Alarm text\neNd:valarm\n" +
+		"end:VEVENT\nEND:VCALENDAR\n"
+	items := previewICSImport(t, raw)
+	if len(items) != 2 {
+		t.Fatalf("got %d events, want both case variants", len(items))
+	}
+	if items[0].Title != "First event" || items[1].Title != "Second event" || items[1].Notes != "Event notes" {
+		t.Fatalf("component case changed imported events: %+v", items)
+	}
+}

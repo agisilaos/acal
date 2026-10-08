@@ -264,7 +264,8 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 
 	for _, line := range lines {
 		s := line
-		switch s {
+		marker := strings.ToUpper(s)
+		switch marker {
 		case "BEGIN:VEVENT":
 			inEvent = true
 			nestedDepth = 0
@@ -279,11 +280,11 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		if !inEvent || s == "" {
 			continue
 		}
-		if strings.HasPrefix(s, "BEGIN:") {
+		if strings.HasPrefix(marker, "BEGIN:") {
 			nestedDepth++
 			continue
 		}
-		if strings.HasPrefix(s, "END:") {
+		if strings.HasPrefix(marker, "END:") {
 			if nestedDepth > 0 {
 				nestedDepth--
 			}

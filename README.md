@@ -410,9 +410,9 @@ ICS import preserves SUMMARY, LOCATION, and DESCRIPTION whitespace and decodes
 iCalendar TEXT escapes after unfolding continuation lines. Literal backslashes,
 commas, semicolons, and escaped newlines survive export/import for independent
 events. URL punctuation remains literal, with CR/LF encoded to keep each URL on
-one content line.
-Nested alarms are not imported and cannot replace event text.
-Quoted text-property parameters may contain colons without changing the text value.
+one content line. Nested alarms are not imported and cannot replace event text.
+Property and component names ignore case. Quoted text-property parameters may
+contain colons without changing the text value.
 
 ICS import supports independent events only. VEVENT entries containing `RRULE`,
 `RDATE`, `EXDATE`, or `RECURRENCE-ID` are skipped with warnings rather than
