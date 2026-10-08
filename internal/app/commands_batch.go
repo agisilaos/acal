@@ -272,7 +272,7 @@ func executeBatchLine(ctx context.Context, be backend.Backend, row batchLine, lo
 			return batchExecResult{}, err
 		}
 		return batchExecResult{
-			View:    map[string]any{"op": "update", "id": row.ID},
+			View:    map[string]any{"op": "update", "id": next.ID},
 			History: &historyEntry{Type: "update", EventID: next.ID, Prev: prev, Next: next},
 		}, nil
 	case "delete":

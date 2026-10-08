@@ -392,6 +392,7 @@ Rows execute in order. By default, processing continues after errors;
 `--strict` or `--continue-on-error=false` stops at the first failed row. This is
 not whole-file preflight or a transaction: earlier successful writes remain.
 Preview the file first with `--dry-run --strict --json`.
+Successful update rows return the resulting event ID, which can change after a move.
 
 For example, save these rows as `ops.jsonl` (replace the sample IDs before writing):
 
