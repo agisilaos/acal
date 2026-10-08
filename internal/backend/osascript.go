@@ -152,7 +152,13 @@ func (b *OsaScriptBackend) listEventsFromDB(ctx context.Context, dbPath string, 
 func buildListEventsQuery(f EventFilter) string {
 	fromCocoa := f.From.Unix() - cocoaEpochOffset
 	toCocoa := f.To.Unix() - cocoaEpochOffset
-	rangeClause := fmt.Sprintf("oc.occurrence_start_date >= %d AND oc.occurrence_start_date <= %d", fromCocoa, toCocoa)
+	fromClause := fmt.Sprintf("oc.occurrence_start_date >= %d", fromCocoa)
+	if ns := f.From.Nanosecond(); ns != 0 {
+		// Compare the remainder separately so a modern timestamp does not
+		// round a nanosecond bound back to the preceding whole second.
+		fromClause = fmt.Sprintf("(oc.occurrence_start_date - %d) >= 0.%09d", fromCocoa, ns)
+	}
+	rangeClause := fmt.Sprintf("%s AND oc.occurrence_start_date <= %d", fromClause, toCocoa)
 	if f.Overlap {
 		startClause := fmt.Sprintf("oc.occurrence_start_date < %d", toCocoa)
 		endClause := fmt.Sprintf("oc.occurrence_end_date > %d", fromCocoa)
@@ -405,6 +411,9 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		start := time.Unix(startUnix, 0).In(f.From.Location())
 		end := time.Unix(endUnix, 0).In(f.From.Location())
 		if f.Overlap && (!start.Before(end) || !start.Before(f.To) || !end.After(f.From)) {
+			continue
+		}
+		if !f.Overlap && (start.Before(f.From) || start.After(f.To)) {
 			continue
 		}
 		startCocoa := start.Unix() - cocoaEpochOffset

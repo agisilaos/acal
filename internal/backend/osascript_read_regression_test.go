@@ -3,8 +3,10 @@ package backend
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,5 +98,44 @@ func TestGetEventPreservesLiteralText(t *testing.T) {
 	}
 	if event.Title != title || event.Location != location || event.Notes != notes || event.URL != url || event.CalendarName != calendar {
 		t.Fatalf("event text changed during lookup: %+v", event)
+	}
+}
+
+func TestListEventsHonorsFractionalStartBeforeLimit(t *testing.T) {
+	start := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	for _, source := range []string{"SQLite", "AppleScript fallback"} {
+		t.Run(source, func(t *testing.T) {
+			dbPath := buildSQLiteFixture(t, 3)
+			db, err := sql.Open("sqlite", "file:"+dbPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if _, err := db.Exec(`UPDATE OccurrenceCache SET occurrence_start_date = ? + event_id - 1, occurrence_end_date = ? + event_id`, start.Unix()-cocoaEpochOffset, start.Unix()-cocoaEpochOffset); err != nil {
+				t.Fatal(err)
+			}
+			if source == "AppleScript fallback" {
+				dbPath = filepath.Join(t.TempDir(), "empty.db")
+				if err := os.WriteFile(dbPath, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+				var rows strings.Builder
+				for i := 1; i <= 3; i++ {
+					fmt.Fprintf(&rows, "uid-%d\tcal-1\tWork\tEvent\t%d\t%d\tfalse\t\t\t\n", i, start.Unix()+int64(i-1), start.Unix()+int64(i))
+				}
+				stubLookupAppleScript(t, fixtureReadRows(t, rows.String()), false)
+			} else {
+				stubLookupAppleScript(t, "unexpected fallback", true)
+			}
+			useCalendarFixture(t, dbPath)
+			for _, offset := range []time.Duration{time.Nanosecond, 500 * time.Millisecond} {
+				items, err := NewOsaScriptBackend().ListEvents(context.Background(), EventFilter{
+					From: start.Add(offset), To: start.Add(2 * time.Second), Limit: 1,
+				})
+				if err != nil || len(items) != 1 || items[0].ID != "uid-2@812030401" {
+					t.Errorf("from offset %s: got events=%+v error=%v; want uid-2@812030401", offset, items, err)
+				}
+			}
+		})
 	}
 }

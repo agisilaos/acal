@@ -499,6 +499,7 @@ Start and end bounds are enforced even when their explicit UTC offsets differ.
 - SQLite event reads preserve literal text, including leading/trailing whitespace, notes, and URLs.
 - AppleScript fallback reads preserve the same text and metadata, including tabs and newlines, and propagate property-read failures.
 - Search and calendar filters use Unicode lowercase matching before applying `--limit`.
+- Explicit fractional start bounds exclude earlier whole-second events.
 - Event fields use AppleScript against Calendar.app; display-alarm replacement uses an EventKit bridge inside the same native script. It replaces only display alarms, preserves the event and other alarm types, and verifies the saved alarm. Matching requires a unique UID/start/calendar-name combination; ambiguity fails instead of choosing a different event. Calendar names and event IDs are passed after an explicit option terminator so leading hyphens remain literal data.
 - Immediately after writes, Calendar's publication of changes to its occurrence cache can lag briefly; SQLite change detection does not force that refresh.
 - `status` reports readiness/degraded state plus active backend/profile/tz/output mode for automation diagnostics.

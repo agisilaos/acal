@@ -97,6 +97,12 @@ func TestAppleScriptRangeSelection(t *testing.T) {
 		if !strings.Contains(string(source), "every event of c whose "+predicate+")") {
 			t.Fatalf("wrong predicate: %s", source)
 		}
+		if !overlap {
+			if len(items) != 0 {
+				t.Fatalf("start-range selection retained an earlier start: %+v", items)
+			}
+			continue
+		}
 		if len(items) != 1 || items[0].Start.Unix() != cocoaEpochOffset+5 || items[0].End.Unix() != cocoaEpochOffset+25 || !items[0].AllDay {
 			t.Fatalf("event changed: %+v", items)
 		}
