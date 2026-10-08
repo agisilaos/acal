@@ -292,12 +292,11 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		if nestedDepth > 0 {
 			continue
 		}
-		parts := strings.SplitN(s, ":", 2)
-		if len(parts) != 2 {
+		property, value, ok := splitICSContentLine(s)
+		if !ok {
 			continue
 		}
-		keyRaw := strings.TrimSpace(parts[0])
-		value := parts[1]
+		keyRaw := strings.TrimSpace(property)
 		key := strings.ToUpper(keyRaw)
 		if strings.Contains(keyRaw, ";") {
 			key = strings.ToUpper(strings.SplitN(keyRaw, ";", 2)[0])
@@ -309,6 +308,21 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		kv[key] = value
 	}
 	return items, warnings
+}
+
+func splitICSContentLine(line string) (string, string, bool) {
+	quoted := false
+	for i, char := range line {
+		switch char {
+		case '"':
+			quoted = !quoted
+		case ':':
+			if !quoted {
+				return line[:i], line[i+1:], true
+			}
+		}
+	}
+	return "", "", false
 }
 
 func parseICSDate(raw string, loc *time.Location) (time.Time, bool, bool) {

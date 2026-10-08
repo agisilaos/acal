@@ -86,3 +86,19 @@ func TestEventsExportImportPreservesURL(t *testing.T) {
 		t.Fatalf("export/import changed URL: %+v", items)
 	}
 }
+
+func TestEventsImportPreservesTextWithQuotedALTREP(t *testing.T) {
+	raw := "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\n" +
+		"DTSTART:20261101T090000Z\nDTEND:20261101T100000Z\n" +
+		"SUMMARY;ALTREP=\"https://example.test/title\":Project review\n" +
+		"LOCATION;ALTREP=\"https://example.test/room\":Meeting room\n" +
+		"DESCRIPTION;ALTREP=\"https://example.test:8443/agenda\":Bring the project plan\n" +
+		"END:VEVENT\nEND:VCALENDAR\n"
+	items := previewICSImport(t, raw)
+	if len(items) != 1 {
+		t.Fatalf("got %d events, want 1", len(items))
+	}
+	if items[0].Title != "Project review" || items[0].Location != "Meeting room" || items[0].Notes != "Bring the project plan" {
+		t.Fatalf("quoted parameter changed event text: %+v", items[0])
+	}
+}
