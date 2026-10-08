@@ -200,17 +200,13 @@ func parseBetweenRange(v string) (int, int, int, int, error) {
 
 func buildSlots(blocks []busyBlock, from, to time.Time, startHour, startMinute, endHour, endMinute int, duration, step time.Duration) []slotRow {
 	fromDay, _ := dayBounds(from)
-	toDay, _ := dayBounds(to)
+	toDay, _ := dayBounds(to.In(from.Location()))
 	slots := make([]slotRow, 0)
 	for day := fromDay; !day.After(toDay); day = day.AddDate(0, 0, 1) {
 		windowStart := time.Date(day.Year(), day.Month(), day.Day(), startHour, startMinute, 0, 0, day.Location())
 		windowEnd := time.Date(day.Year(), day.Month(), day.Day(), endHour, endMinute, 0, 0, day.Location())
-		if day.Equal(fromDay) && from.After(windowStart) {
-			windowStart = from
-		}
-		if day.Equal(toDay) && to.Before(windowEnd) {
-			windowEnd = to
-		}
+		windowStart = maxTime(windowStart, from)
+		windowEnd = minTime(windowEnd, to)
 		if !windowStart.Before(windowEnd) {
 			continue
 		}
