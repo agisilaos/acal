@@ -114,6 +114,9 @@ snapshots lack recurrence classification, so recreation through undo-delete or
 redo-add is rejected without moving either stack; live-target replay is still
 subject to native classification. A successful guarded live-target replay can
 establish independent status for its next replay.
+Successful recreation or movement rebinds related undo/redo entries to the
+returned event ID. Snapshot links connect historical IDs within the recorded
+calendar, while their field values remain intact for subsequent replay.
 
 History and redo contain full event snapshots and are mutable replay stacks;
 access restricts the acal directory to `0700` and accessed snapshot files to `0600`.

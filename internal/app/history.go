@@ -355,6 +355,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return last, meta, nil
 	}
 	redoEntry := last
+	var previous, result *contract.Event
 	switch last.Type {
 	case "reminder":
 		if err := replayReminder(ctx, be, last.EventID, last.ReminderBefore); err != nil {
@@ -392,8 +393,7 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, err
 		}
 		if created != nil {
-			redoEntry.EventID = created.ID
-			redoEntry.Deleted = created
+			previous, result = last.Deleted, created
 		}
 	case "update":
 		if last.Prev == nil {
@@ -408,9 +408,18 @@ func undoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if err != nil {
 			return historyEntry{}, nil, err
 		}
-		redoEntry.EventID = updated.ID
+		previous = &contract.Event{ID: id, CalendarID: last.Prev.CalendarID, CalendarName: last.Prev.CalendarName}
+		result = updated
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported history type: %s", last.Type)
+	}
+	if result != nil {
+		retargetHistory(entries, redoEntries, previous, result)
+		redoEntry = entries[len(entries)-1]
+		redoEntry.EventID = result.ID
+		if last.Type == "delete" {
+			redoEntry.Deleted = result
+		}
 	}
 	if err := writeHistory(entries[:len(entries)-1]); err != nil {
 		return historyEntry{}, nil, err
@@ -444,6 +453,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		return last, meta, nil
 	}
 	applied := last
+	var previous, result *contract.Event
 	switch last.Type {
 	case "reminder":
 		if err := replayReminder(ctx, be, last.EventID, last.ReminderAfter); err != nil {
@@ -473,8 +483,7 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 			return historyEntry{}, nil, err
 		}
 		if created != nil {
-			applied.EventID = created.ID
-			applied.Created = created
+			previous, result = last.Created, created
 		}
 	case "delete":
 		if strings.TrimSpace(last.EventID) == "" {
@@ -492,10 +501,20 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 		if err != nil {
 			return historyEntry{}, nil, err
 		}
-		applied.EventID = updated.ID
-		applied.Next = updated
+		previous = &contract.Event{ID: last.EventID, CalendarID: last.Next.CalendarID, CalendarName: last.Next.CalendarName}
+		result = updated
 	default:
 		return historyEntry{}, nil, fmt.Errorf("unsupported redo type: %s", last.Type)
+	}
+	if result != nil {
+		retargetHistory(historyEntries, redoEntries, previous, result)
+		applied = redoEntries[len(redoEntries)-1]
+		applied.EventID = result.ID
+		if last.Type == "add" {
+			applied.Created = result
+		} else {
+			applied.Next = result
+		}
 	}
 	applied.Independent = true
 	applied.At = time.Now().UTC()
@@ -508,6 +527,80 @@ func redoLastHistory(ctx context.Context, be backend.Backend, dryRun bool) (hist
 	}
 	meta["redone"] = true
 	return applied, meta, nil
+}
+
+// IDs are opaque. Update snapshots connect an event's historical identities,
+// including starts before and after moves. Keep the snapshots' field values but
+// bind their replay targets to the authoritative identity returned by the write.
+func retargetHistory(history, redo []historyEntry, previous, result *contract.Event) {
+	stacks := [][]historyEntry{history, redo}
+	links := map[string][]string{}
+	for _, entries := range stacks {
+		for _, entry := range entries {
+			if !historyEntryMatchesCalendar(entry, previous) {
+				continue
+			}
+			anchor := entry.EventID
+			for _, snapshot := range []*contract.Event{entry.Prev, entry.Next, entry.Created, entry.Deleted} {
+				if snapshot == nil || snapshot.ID == "" {
+					continue
+				}
+				if anchor == "" {
+					anchor = snapshot.ID
+				}
+				links[anchor] = append(links[anchor], snapshot.ID)
+				links[snapshot.ID] = append(links[snapshot.ID], anchor)
+			}
+		}
+	}
+	ids := map[string]bool{previous.ID: true}
+	queue := []string{previous.ID}
+	for i := 0; i < len(queue); i++ {
+		for _, id := range links[queue[i]] {
+			if !ids[id] {
+				ids[id] = true
+				queue = append(queue, id)
+			}
+		}
+	}
+	for _, entries := range stacks {
+		for i := range entries {
+			entry := &entries[i]
+			if !historyEntryMatchesCalendar(*entry, previous) {
+				continue
+			}
+			if ids[entry.EventID] {
+				entry.EventID = result.ID
+			}
+			for _, snapshot := range []**contract.Event{&entry.Prev, &entry.Next, &entry.Created, &entry.Deleted} {
+				if *snapshot != nil && ids[(*snapshot).ID] {
+					copy := **snapshot
+					copy.ID = result.ID
+					*snapshot = &copy
+				}
+			}
+		}
+	}
+}
+
+func historyEntryMatchesCalendar(entry historyEntry, reference *contract.Event) bool {
+	for _, snapshot := range []*contract.Event{entry.Prev, entry.Next, entry.Created, entry.Deleted} {
+		if snapshot == nil {
+			continue
+		}
+		if snapshot.CalendarID != "" && reference.CalendarID != "" && snapshot.CalendarID == reference.CalendarID {
+			continue
+		}
+		if snapshot.CalendarName != "" && reference.CalendarName != "" && snapshot.CalendarName != reference.CalendarName {
+			return false
+		}
+		// Native readback sometimes represents a calendar ID with its name.
+		// Two distinct real IDs must not be linked merely by a shared name.
+		if snapshot.CalendarID != "" && reference.CalendarID != "" && snapshot.CalendarID != reference.CalendarID && snapshot.CalendarID != snapshot.CalendarName && reference.CalendarID != reference.CalendarName {
+			return false
+		}
+	}
+	return true
 }
 
 func buildUpdateInputFromEvent(ev *contract.Event) backend.EventUpdateInput {
