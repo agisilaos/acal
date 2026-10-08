@@ -223,6 +223,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 	raw = strings.NewReplacer("\n ", "", "\n\t", "").Replace(raw)
 	lines := strings.Split(raw, "\n")
 	inEvent := false
+	nestedDepth := 0
 	kv := map[string]string{}
 	items := make([]backend.EventCreateInput, 0)
 	warnings := make([]string, 0)
@@ -263,6 +264,7 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 		switch s {
 		case "BEGIN:VEVENT":
 			inEvent = true
+			nestedDepth = 0
 			kv = map[string]string{}
 			continue
 		case "END:VEVENT":
@@ -272,6 +274,19 @@ func parseICS(raw, calendar string, loc *time.Location) ([]backend.EventCreateIn
 			continue
 		}
 		if !inEvent || s == "" {
+			continue
+		}
+		if strings.HasPrefix(s, "BEGIN:") {
+			nestedDepth++
+			continue
+		}
+		if strings.HasPrefix(s, "END:") {
+			if nestedDepth > 0 {
+				nestedDepth--
+			}
+			continue
+		}
+		if nestedDepth > 0 {
 			continue
 		}
 		parts := strings.SplitN(s, ":", 2)
