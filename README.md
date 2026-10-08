@@ -576,6 +576,9 @@ values and all-day dates use `--tz`; date-times with `TZID` use the installed
 IANA timezone database, preserving identifier casing (for example,
 `DTSTART;TZID=America/New_York:20260220T090000`). Quoted TZID values are accepted.
 Winter and summer offsets follow the named zone's rules.
+Repeated local times use the first occurrence; nonexistent local times use the
+offset before the gap, as required by iCalendar. This differs from interactive
+date input, which rejects nonexistent local times.
 
 Embedded `VTIMEZONE` definitions are not interpreted: recognized IANA identifiers
 use the system rules, and unknown/custom identifiers cause that VEVENT to be

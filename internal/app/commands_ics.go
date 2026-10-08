@@ -385,11 +385,56 @@ func parseICSDate(raw string, loc *time.Location) (time.Time, bool, bool) {
 			return t, false, true
 		}
 	}
-	t, err := time.ParseInLocation("20060102T150405", val, loc)
+	t, ok := parseICSLocalDateTime(val, loc)
+	return t, false, ok
+}
+
+// RFC 5545 section 3.3.5 chooses the first occurrence in a fold and the
+// pre-transition UTC offset in a gap. time.Date alone may choose either side.
+func parseICSLocalDateTime(value string, loc *time.Location) (time.Time, bool) {
+	const layout = "20060102T150405"
+	wall, err := time.Parse(layout, value)
 	if err != nil {
-		return time.Time{}, false, false
+		return time.Time{}, false
 	}
-	return t, false, true
+	local := time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), wall.Second(), 0, loc)
+	zoneStart, zoneEnd := local.ZoneBounds()
+	// The adjacent intervals include both possible offsets when time.Date
+	// resolves the wall time on either side of a transition.
+	zones := []time.Time{local}
+	if !zoneStart.IsZero() {
+		zones = append(zones, zoneStart.Add(-time.Nanosecond))
+	}
+	if !zoneEnd.IsZero() {
+		zones = append(zones, zoneEnd)
+	}
+	var first time.Time
+	found := false
+	for _, zone := range zones {
+		_, offset := zone.Zone()
+		candidate := wall.Add(-time.Duration(offset) * time.Second).In(loc)
+		if candidate.Format(layout) == wall.Format(layout) && (!found || candidate.Before(first)) {
+			first, found = candidate, true
+		}
+	}
+	if found {
+		return first, true
+	}
+	// No real instant has this wall time. Locate the gap and apply its old
+	// offset, including transitions that differ by half an hour or a day.
+	for _, transition := range []time.Time{zoneStart, zoneEnd} {
+		if transition.IsZero() {
+			continue
+		}
+		_, before := transition.Add(-time.Nanosecond).Zone()
+		_, after := transition.Zone()
+		gapStart := transition.UTC().Add(time.Duration(before) * time.Second)
+		gapEnd := transition.UTC().Add(time.Duration(after) * time.Second)
+		if !wall.Before(gapStart) && wall.Before(gapEnd) {
+			return wall.Add(-time.Duration(before) * time.Second).In(loc), true
+		}
+	}
+	return time.Time{}, false
 }
 
 // writeICS checks the destination itself, including --out terminal device paths.
