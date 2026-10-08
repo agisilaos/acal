@@ -10,6 +10,23 @@ func expectRejection(_ code: String, _ body: () throws -> Void) {
     catch let error as ProofError { expect(error.code == code, "Wrong rejection: \(error.code)") }
     catch { fatalError("Unexpected error: \(error)") }
 }
+
+for input in ["2026-02-30T09:00:00Z", "2026-10-01T09:00:00Zjunk", "2026-10-01T09:00:00+25:00",
+              "2026-02-29T09:00:00Z", "2026-10-01T24:00:00Z", "2026-10-01T09:00:00+02:60",
+              "2026-10-01T09:00:00Z\n", "2026-10-01T09:00:00.500Z", "2026-10-01T09:00:00"] {
+    let req = Request(protocol: wireVersion, request_id: String(repeating: "a", count: 32), operation: "list", token: nil, args: ["from": .string(input)])
+    expectRejection("INVALID_USAGE") { _ = try date(req, "from") }
+}
+for (input, expected) in [("2024-02-29T09:00:00Z", "2024-02-29T09:00:00Z"),
+                          ("2026-10-01T09:00:00z", "2026-10-01T09:00:00Z"),
+                          ("2026-10-01T09:00:00+05:30", "2026-10-01T03:30:00Z"),
+                          ("2026-10-01T09:00:00-03:30", "2026-10-01T12:30:00Z"),
+                          ("2026-10-01T09:00:00+23:59", "2026-09-30T09:01:00Z")] {
+    let req = Request(protocol: wireVersion, request_id: String(repeating: "a", count: 32), operation: "list", token: nil, args: ["from": .string(input)])
+    expect(iso(try! date(req, "from")) == expected, "Valid timestamp changed: \(input)")
+}
+print("PASS: native dates reject invalid values and preserve valid offset instants")
+
 let ref = Reference(calendar: "calendar/α", item: "item+\"\\", start: 1_800_000_000.25)
 let canonical = try encodeReference(ref)
 let simple = Reference(calendar: "cal", item: "item", start: 1)

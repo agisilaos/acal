@@ -28,9 +28,23 @@ func number(_ req: Request, _ key: String) -> Double? { if case .number(let v) =
 func flag(_ req: Request, _ key: String) -> Bool { if case .bool(let v) = req.args[key] { return v }; return false }
 func date(_ req: Request, _ key: String) throws -> Date {
     let s = try text(req, key)
+    let pattern = #"\A[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])\z"#
+    guard s.range(of: pattern, options: .regularExpression) != nil else {
+        try fail("INVALID_USAGE", "\(key) must be an RFC3339 instant with an explicit offset and whole seconds")
+    }
+    // Foundation accepts normalized dates and partial numeric offsets. Validate
+    // the whole wall time in UTC, then apply the already validated offset.
+    let wallTime = String(s.prefix(19)) + "Z"
     let formatter = ISO8601DateFormatter()
-    guard let d = formatter.date(from: s) else { try fail("INVALID_USAGE", "\(key) must be an RFC3339 instant with an explicit offset and whole seconds") }
-    return d
+    guard let d = formatter.date(from: wallTime), formatter.string(from: d) == wallTime else {
+        try fail("INVALID_USAGE", "\(key) contains an invalid calendar date")
+    }
+    let zone = String(s.dropFirst(19))
+    if zone.uppercased() == "Z" { return d }
+    let hours = Int(zone.dropFirst().prefix(2))!
+    let minutes = Int(zone.suffix(2))!
+    let offset = (hours * 3600 + minutes * 60) * (zone.first == "-" ? -1 : 1)
+    return d.addingTimeInterval(-TimeInterval(offset))
 }
 func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
 func validToken(_ s: String) -> Bool { s.count == 32 && s.allSatisfy { "0123456789abcdef".contains($0) } }

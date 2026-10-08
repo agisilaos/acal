@@ -92,6 +92,10 @@ and production recovery are outside this proof. Cleanup only exact fixtures owne
 by this state, and run mutations sequentially. Do not remove a calendar or match
 personal events by title. An add failure may leave a fixture requiring inspection.
 
+Native date arguments require valid calendar dates with an explicit RFC3339
+offset and whole seconds. UTC accepts `Z` or `z`. Invalid dates, malformed offsets,
+fractional seconds, and trailing characters return `INVALID_USAGE`.
+
 Query intervals are explicit RFC3339 instants, start-inclusive/end-exclusive, at
 most four years. Listing uses event start times, not overlap. `truncated` reports
 the result limit. The default timeout is 15 seconds; zero disables it. Termination
