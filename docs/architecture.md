@@ -37,8 +37,10 @@ Commands resolve configuration and validate input before dispatching typed backe
 operations. The app owns snapshots and user-facing outcomes; the backend owns
 native targeting and result verification. Unix/native date conversion uses Foundation
 rather than arithmetic on a locale-parsed epoch; occurrence selection compares
-native dates. Repeated local times during a DST fold remain ambiguous in AppleScript. Returned records flow through the output
-package, with dedicated renderers for health, history, and ICS.
+native dates. Repeated local times during a DST fold remain ambiguous in AppleScript.
+The application presents copied event records in the effective timezone before
+passing them to the output package, leaving backend values and history snapshots
+unchanged. Health, history, and ICS have dedicated renderers.
 
 ## Reads and writes
 

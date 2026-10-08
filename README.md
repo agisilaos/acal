@@ -220,6 +220,8 @@ precedence is applied. An invalid effective value (for example, `Europe/Berln`)
 returns usage exit code 2 and names the value before any backend access. An
 omitted or empty effective timezone uses the system local timezone; `--tz ''`
 explicitly selects that default over an inherited timezone.
+Returned event timestamps and planning intervals use that effective timezone in
+JSON, JSONL, and plain output; the underlying instants and event IDs are unchanged.
 
 Preview an event in a named timezone without writing to Calendar:
 

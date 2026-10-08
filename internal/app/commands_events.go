@@ -242,6 +242,10 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				return failWithHint(p, contract.ErrBackendUnavailable, err, "Run `acal doctor` for remediation", 6)
 			}
 			rows, truncated := buildConflictRows(clipEventsToRange(items, f.From, f.To), conflictsIncludeAllDay, conflictsMax)
+			for i := range rows {
+				rows[i].OverlapStart = rows[i].OverlapStart.In(ro.Location)
+				rows[i].OverlapEnd = rows[i].OverlapEnd.In(ro.Location)
+			}
 			meta := map[string]any{
 				"count":           len(rows),
 				"events_scanned":  len(items),

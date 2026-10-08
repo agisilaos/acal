@@ -48,8 +48,10 @@ func newFreebusyCmd(opts *globalOptions) *cobra.Command {
 			}
 			blocks := buildBusyBlocks(clipEventsToRange(items, f.From, f.To), includeAllDay)
 			minutes := int64(0)
-			for _, b := range blocks {
-				minutes += b.Minutes
+			for i := range blocks {
+				minutes += blocks[i].Minutes
+				blocks[i].Start = blocks[i].Start.In(ro.Location)
+				blocks[i].End = blocks[i].End.In(ro.Location)
 			}
 			return successWithMeta(ctx, p, ro, blocks, map[string]any{"count": len(blocks), "busy_minutes": minutes, "events_scanned": len(items), "include_all_day": includeAllDay}, nil)
 		},
@@ -110,6 +112,10 @@ func newSlotsCmd(opts *globalOptions) *cobra.Command {
 			}
 			blocks := buildBusyBlocks(clipEventsToRange(items, f.From, f.To), includeAllDay)
 			slots := buildSlots(blocks, f.From, f.To, startHour, startMinute, endHour, endMinute, dur, step)
+			for i := range slots {
+				slots[i].Start = slots[i].Start.In(ro.Location)
+				slots[i].End = slots[i].End.In(ro.Location)
+			}
 			return successWithMeta(ctx, p, ro, slots, map[string]any{"count": len(slots), "duration_minutes": int64(dur.Minutes()), "events_scanned": len(items)}, nil)
 		},
 	}

@@ -332,6 +332,9 @@ func recordTiming(ctx context.Context, name string, d time.Duration) {
 }
 
 func successWithMeta(ctx context.Context, p output.Printer, ro *globalOptions, data any, meta map[string]any, warnings []string) error {
+	if ro != nil {
+		data = eventOutputInLocation(data, ro.Location)
+	}
 	if ro != nil && ro.Verbose {
 		timings := backendTimings(ctx)
 		if len(timings) > 0 {
