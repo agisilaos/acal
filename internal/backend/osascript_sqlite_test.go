@@ -135,7 +135,7 @@ func TestListEventsFromDBFallsBackOnDeniedSQLiteAccess(t *testing.T) {
 		file.Close()
 		t.Skip("current user can read files without permission bits")
 	}
-	marker := stubLookupAppleScript(t, "uid-1\tcal-1\tWork\tfallback\t978307201\t978307202\tfalse\troom\tnotes\turl\n", false)
+	marker := stubLookupAppleScript(t, fixtureReadRows(t, "uid-1\tcal-1\tWork\tfallback\t978307201\t978307202\tfalse\troom\tnotes\turl\n"), false)
 	b := NewOsaScriptBackend()
 	items, err := b.listEventsFromDB(context.Background(), dbPath, EventFilter{
 		From: time.Unix(cocoaEpochOffset+1, 0), To: time.Unix(cocoaEpochOffset+10, 0),

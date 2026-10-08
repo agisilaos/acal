@@ -53,9 +53,11 @@ inside SQLite before LIMIT. Exact occurrence IDs couple a UID with its Cocoa-epo
 
 Calendar enumeration and mutations use fixed AppleScript source with values passed
 as arguments. Both launchers put `--` between trusted interpreter options/source
-and data. Tabular reads request raw interpreter output and preserve empty trailing
-cells when splitting rows. This boundary must hold for every caller, including batch input and
-history replay. SQL literals and LIKE patterns have their own escaping in the read
+and data. Calendar enumeration uses tabular raw interpreter output and preserves
+empty trailing cells. Fallback event reads use JSON lines to preserve literal
+text, including notes, URLs, tabs, and newlines; missing optional values become
+empty strings, while property-read errors propagate. This boundary must hold for
+every caller, including batch input and history replay. SQL literals and LIKE patterns have their own escaping in the read
 adapter; neither boundary should rely on a caller sanitizing event text.
 
 Display-alarm replacement uses EventKit from the native script because Calendar's

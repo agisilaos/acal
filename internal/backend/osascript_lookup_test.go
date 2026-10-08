@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -160,7 +161,7 @@ func TestGetEventByIDAppleScriptFallback(t *testing.T) {
 		t.Run(strconv.FormatInt(occurrence, 10), func(t *testing.T) {
 			startUnix := occurrence + cocoaEpochOffset
 			row := func(uid string, start int64) string {
-				return fmt.Sprintf("%s\tcal-1\tWork\ttarget\t%d\t%d\tfalse\tRoom\tnotes\turl\n", uid, start, start+60)
+				return fixtureReadRows(t, fmt.Sprintf("%s\tcal-1\tWork\ttarget\t%d\t%d\tfalse\tRoom\tnotes\turl\n", uid, start, start+60))
 			}
 			marker := stubLookupAppleScript(t, row("uid@domain", startUnix-1)+row("other", startUnix)+row("uid@domain", startUnix)+row("uid@domain", startUnix+1), false)
 			// An empty file opens as SQLite but its missing tables force fallback.
@@ -230,6 +231,22 @@ func TestGetEventByIDPropagatesFallbackFailure(t *testing.T) {
 	}
 }
 
+// Older fixtures use tab-separated field literals for readability. Encode them
+// at the interpreter boundary to match the JSON-line event read protocol.
+func fixtureReadRows(t *testing.T, tabular string) string {
+	t.Helper()
+	var output strings.Builder
+	for _, row := range splitLines(tabular) {
+		raw, err := json.Marshal(strings.Split(row, "\t"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		output.Write(raw)
+		output.WriteByte('\n')
+	}
+	return output.String()
+}
+
 func stubLookupAppleScript(t *testing.T, output string, fail bool) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -254,7 +271,7 @@ func stubLookupAppleScript(t *testing.T, output string, fail bool) string {
 
 func TestGetEventByIDFallbackWithEmptyOptionalFields(t *testing.T) {
 	start := time.Unix(cocoaEpochOffset+42, 0)
-	stubLookupAppleScript(t, fmt.Sprintf("uid\tcal\tWork\tquote \"literal\"\t%d\t%d\tfalse\t\t\t\n", start.Unix(), start.Add(time.Hour).Unix()), false)
+	stubLookupAppleScript(t, fixtureReadRows(t, fmt.Sprintf("uid\tcal\tWork\tquote \"literal\"\t%d\t%d\tfalse\t\t\t\n", start.Unix(), start.Add(time.Hour).Unix())), false)
 	b := NewOsaScriptBackend()
 	event, err := getEventByID(context.Background(), "uid@42", b.listEventsViaAppleScript)
 	if err != nil || event == nil || event.Title != `quote "literal"` || event.Location != "" || event.Notes != "" || event.URL != "" {

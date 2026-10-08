@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -345,24 +346,7 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		toSecond++
 	}
 	toUnix := strconv.FormatInt(toSecond, 10)
-	out, err := runAppleScript(ctx, append(appleScriptDateHandlers(), []string{
-		`on cleanText(v)`,
-		`set s to v as text`,
-		`set AppleScript's text item delimiters to tab`,
-		`set parts to text items of s`,
-		`set AppleScript's text item delimiters to " "`,
-		`set s to parts as text`,
-		`set AppleScript's text item delimiters to return`,
-		`set parts to text items of s`,
-		`set AppleScript's text item delimiters to " "`,
-		`set s to parts as text`,
-		`set AppleScript's text item delimiters to linefeed`,
-		`set parts to text items of s`,
-		`set AppleScript's text item delimiters to " "`,
-		`set s to parts as text`,
-		`set AppleScript's text item delimiters to ""`,
-		`return s`,
-		`end cleanText`,
+	out, err := runAppleScript(ctx, append(updateResultScriptHandlers(), []string{
 		`on run argv`,
 		`set fromUnix to item 1 of argv as integer`,
 		`set toUnix to item 2 of argv as integer`,
@@ -377,20 +361,19 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		`on error`,
 		`set calID to (name of c as text)`,
 		`end try`,
-		`set calName to my cleanText(name of c as text)`,
+		`set calName to name of c as text`,
 		`repeat with e in (every event of c whose ` + rangePredicate + `)`,
 		`set evStartDate to start date of e`,
 		`set evUID to (uid of e as text)`,
-		`set evTitle to my cleanText(summary of e as text)`,
+		`set evTitle to my optionalText(summary of e)`,
 		`set evEndDate to end date of e`,
 		`set evStartUnix to my unixSeconds(evStartDate)`,
 		`set evEndUnix to my unixSeconds(evEndDate)`,
 		`set evAllDay to (allday event of e as text)`,
-		`set evLoc to ""`,
-		`try`,
-		`set evLoc to my cleanText(location of e as text)`,
-		`end try`,
-		`set rowText to evUID & tab & calID & tab & calName & tab & evTitle & tab & (evStartUnix as text) & tab & (evEndUnix as text) & tab & evAllDay & tab & evLoc & tab & "" & tab & ""`,
+		`set evLoc to my optionalText(location of e)`,
+		`set evNotes to my optionalText(description of e)`,
+		`set evURL to my optionalText(url of e)`,
+		`set rowText to my resultJSON({evUID, calID, calName, evTitle, evStartUnix as text, evEndUnix as text, evAllDay, evLoc, evNotes, evURL})`,
 		`copy rowText to end of rows`,
 		`end repeat`,
 		`end repeat`,
@@ -407,9 +390,9 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 	lines := splitLines(out)
 	items := make([]contract.Event, 0, len(lines))
 	for _, line := range lines {
-		parts := strings.Split(line, "\t")
-		if len(parts) < 10 {
-			continue
+		var parts []string
+		if err := json.Unmarshal([]byte(line), &parts); err != nil || len(parts) != 10 {
+			return nil, fmt.Errorf("complete native event readback unavailable")
 		}
 		startUnix, err := strconv.ParseInt(strings.TrimSpace(parts[4]), 10, 64)
 		if err != nil {
@@ -428,14 +411,14 @@ func (b *OsaScriptBackend) listEventsViaAppleScript(ctx context.Context, f Event
 		e := contract.Event{
 			ID:           fmt.Sprintf("%s@%d", strings.TrimSpace(parts[0]), startCocoa),
 			CalendarID:   strings.TrimSpace(parts[1]),
-			CalendarName: strings.TrimSpace(parts[2]),
-			Title:        strings.TrimSpace(parts[3]),
+			CalendarName: parts[2],
+			Title:        parts[3],
 			Start:        start,
 			End:          end,
 			AllDay:       strings.EqualFold(strings.TrimSpace(parts[6]), "true"),
-			Location:     strings.TrimSpace(parts[7]),
-			Notes:        strings.TrimSpace(parts[8]),
-			URL:          strings.TrimSpace(parts[9]),
+			Location:     parts[7],
+			Notes:        parts[8],
+			URL:          parts[9],
 			Sequence:     0,
 			UpdatedAt:    time.Time{},
 		}

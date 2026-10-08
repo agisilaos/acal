@@ -58,7 +58,7 @@ func TestSQLiteRangeSelection(t *testing.T) {
 					t.Fatalf("event changed: %+v", items[0])
 				}
 			}
-			stubLookupAppleScript(t, fmt.Sprintf("uid\tcal\tWork\tEvent\t%d\t%d\t%t\troom\tnote\turl\n", tc.start+cocoaEpochOffset, tc.end+cocoaEpochOffset, tc.allDay), false)
+			stubLookupAppleScript(t, fixtureReadRows(t, fmt.Sprintf("uid\tcal\tWork\tEvent\t%d\t%d\t%t\troom\tnote\turl\n", tc.start+cocoaEpochOffset, tc.end+cocoaEpochOffset, tc.allDay)), false)
 			fallback, err := NewOsaScriptBackend().listEventsViaAppleScript(context.Background(), EventFilter{From: time.Unix(cocoaEpochOffset+10, 0), To: time.Unix(cocoaEpochOffset+20, 0), Overlap: true})
 			if err != nil || (len(fallback) == 1) != tc.overlap {
 				t.Fatalf("AppleScript overlap: %+v, %v; want included=%v", fallback, err, tc.overlap)
@@ -75,7 +75,7 @@ func TestAppleScriptRangeSelection(t *testing.T) {
 	// The runner is stubbed: verify native predicate source and returned full bounds,
 	// without reading or mutating the user's Calendar data.
 	output := "ongoing\tcal-1\tWork\tOngoing\t978307205\t978307225\ttrue\troom\tnote\turl\n"
-	marker := stubLookupAppleScript(t, output, false)
+	marker := stubLookupAppleScript(t, fixtureReadRows(t, output), false)
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$ACAL_TEST_SCRIPT_ARGS\"\n/bin/cat \"$ACAL_TEST_SCRIPT_OUTPUT\"\n"
 	if err := os.WriteFile(filepath.Join(filepath.Dir(marker), "osascript"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestOverlapFractionalBounds(t *testing.T) {
 				t.Fatalf("SQLite: %+v %v", items, err)
 			}
 			// Include an out-of-range earlier event to prove filtering precedes limit.
-			marker := stubLookupAppleScript(t, "one\tcal\tWork\tevent-1\t978307201\t978307202\tfalse\troom\tnote\turl\ntwo\tcal\tWork\tevent-2\t978307202\t978307203\tfalse\troom\tnote\turl\nthree\tcal\tWork\tevent-3\t978307203\t978307204\tfalse\troom\tnote\turl\n", false)
+			marker := stubLookupAppleScript(t, fixtureReadRows(t, "one\tcal\tWork\tevent-1\t978307201\t978307202\tfalse\troom\tnote\turl\ntwo\tcal\tWork\tevent-2\t978307202\t978307203\tfalse\troom\tnote\turl\nthree\tcal\tWork\tevent-3\t978307203\t978307204\tfalse\troom\tnote\turl\n"), false)
 			items, err = NewOsaScriptBackend().listEventsViaAppleScript(context.Background(), f)
 			if err != nil || len(items) != 1 || items[0].Title != tc.want {
 				t.Fatalf("AppleScript: %+v %v", items, err)
@@ -185,7 +185,7 @@ func TestOverlapModernNanosecondBounds(t *testing.T) {
 	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	stubLookupAppleScript(t, fmt.Sprintf("uid\tcal\tWork\tEvent\t%d\t%d\tfalse\troom\tnote\turl\n", start.Unix(), start.Unix()+60), false)
+	stubLookupAppleScript(t, fixtureReadRows(t, fmt.Sprintf("uid\tcal\tWork\tEvent\t%d\t%d\tfalse\troom\tnote\turl\n", start.Unix(), start.Unix()+60)), false)
 	for _, f := range []EventFilter{
 		{From: start.Add(-time.Second), To: start.Add(time.Nanosecond), Overlap: true},
 		{From: start.Add(time.Nanosecond), To: start.Add(2 * time.Nanosecond), Overlap: true},
@@ -219,7 +219,7 @@ func TestOverlapSkipsNonpositiveIntervalsBeforeLimit(t *testing.T) {
 			if err = db.Close(); err != nil {
 				t.Fatal(err)
 			}
-			stubLookupAppleScript(t, fmt.Sprintf("invalid\tcal\tWork\tevent-2\t%d\t%d\tfalse\troom\tnote\turl\nvalid\tcal\tWork\tevent-3\t%d\t%d\tfalse\troom\tnote\turl\n", cocoaEpochOffset+2, cocoaEpochOffset+end, cocoaEpochOffset+3, cocoaEpochOffset+4), false)
+			stubLookupAppleScript(t, fixtureReadRows(t, fmt.Sprintf("invalid\tcal\tWork\tevent-2\t%d\t%d\tfalse\troom\tnote\turl\nvalid\tcal\tWork\tevent-3\t%d\t%d\tfalse\troom\tnote\turl\n", cocoaEpochOffset+2, cocoaEpochOffset+end, cocoaEpochOffset+3, cocoaEpochOffset+4)), false)
 			for _, overlap := range []bool{false, true} {
 				f := EventFilter{From: time.Unix(cocoaEpochOffset, 0), To: time.Unix(cocoaEpochOffset+5, 0), Overlap: overlap, Limit: 1}
 				want := "event-2"
