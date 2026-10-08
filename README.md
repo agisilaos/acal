@@ -307,6 +307,9 @@ second, `23:59:59`. An explicit midnight filter end is expanded the same way.
 An agenda `--day` timestamp keeps its time of day and ends one calendar day later,
 minus one second.
 
+Quick-add uses an inline `@Calendar` when present; `--calendar` supplies the
+fallback when it is absent.
+
 Quick-add plain output (both `quick-add` and `events quick-add`) defaults to
 `id`, `start`, `end`, `calendar`, `title`, with `dry-run` as the preview ID.
 Use `--fields title,start` to select columns in that order. Start and end use

@@ -110,7 +110,7 @@ func parseQuickAddInput(input string, now time.Time, loc *time.Location, default
 		return backend.EventCreateInput{}, fmt.Errorf("missing title")
 	}
 	duration := defaultDuration
-	calendar := strings.TrimSpace(defaultCalendar)
+	calendar := ""
 	titleParts := make([]string, 0, len(tokens)-consumed)
 	for _, tok := range tokens[consumed:] {
 		if strings.HasPrefix(tok, "@") && len(tok) > 1 {
@@ -131,6 +131,9 @@ func parseQuickAddInput(input string, now time.Time, loc *time.Location, default
 	title := strings.TrimSpace(strings.Join(titleParts, " "))
 	if title == "" {
 		return backend.EventCreateInput{}, fmt.Errorf("missing title")
+	}
+	if calendar == "" {
+		calendar = strings.TrimSpace(defaultCalendar)
 	}
 	if calendar == "" {
 		return backend.EventCreateInput{}, fmt.Errorf("missing calendar; include @Calendar or --calendar")

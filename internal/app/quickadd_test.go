@@ -53,6 +53,26 @@ func TestParseQuickAddInputDefaultCalendar(t *testing.T) {
 	}
 }
 
+func TestQuickAddInlineCalendarOverridesFallback(t *testing.T) {
+	for _, alias := range []string{"quick-add", "events quick-add"} {
+		t.Run(alias, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			args := append(strings.Fields(alias), "2026-10-09 10:00 Probe @Work", "--calendar", "Personal", "--dry-run", "--json")
+			out, err := runReminderHistoryCommand(t, &scopeCaptureBackend{}, args...)
+			if err != nil {
+				t.Fatalf("quick-add failed: %v\n%s", err, out)
+			}
+			var response struct{ Data backend.EventCreateInput }
+			if err := json.Unmarshal([]byte(out), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Data.Calendar != "Work" || response.Data.Title != "Probe" {
+				t.Fatalf("calendar=%q title=%q; want Work and Probe", response.Data.Calendar, response.Data.Title)
+			}
+		})
+	}
+}
+
 func TestParseQuickAddInputAllDay(t *testing.T) {
 	now := time.Date(2026, 2, 16, 8, 0, 0, 0, time.UTC)
 	in, err := parseQuickAddInput("tomorrow Offsite @Work", now, time.UTC, "", time.Hour, true)
