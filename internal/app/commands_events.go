@@ -558,12 +558,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 					return failWithHint(p, contract.ErrInvalidUsage, err, "Use --end or --duration", 2)
 				}
 			} else {
-				d := current.End.Sub(current.Start)
-				if d <= 0 {
+				end = preservedEventEnd(current, start, loc)
+				if !end.After(start) {
 					err = errors.New("cannot preserve duration from current event; end must be after start")
 					return failWithHint(p, contract.ErrInvalidUsage, err, "Pass --duration or --end explicitly", 2)
 				}
-				end = start.Add(d)
 			}
 
 			patch := backend.EventUpdateInput{
@@ -628,11 +627,11 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return failWithHint(p, contract.ErrNotFound, err, "Check ID with `acal events list --fields id,title,start`", 4)
 			}
-			duration := current.End.Sub(current.Start)
+			end := preservedEventEnd(current, start, loc)
 			if explicitDuration != nil {
-				duration = *explicitDuration
+				end = start.Add(*explicitDuration)
 			}
-			if duration <= 0 {
+			if !end.After(start) {
 				err = errors.New("source event has invalid duration")
 				return failWithHint(p, contract.ErrInvalidUsage, err, "Pass --duration explicitly", 2)
 			}
@@ -655,7 +654,7 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 				Calendar: calendar,
 				Title:    title,
 				Start:    start,
-				End:      start.Add(duration),
+				End:      end,
 				Location: current.Location,
 				Notes:    current.Notes,
 				URL:      current.URL,
@@ -840,6 +839,19 @@ func newEventsCmd(opts *globalOptions) *cobra.Command {
 
 	events.AddCommand(list, search, show, query, conflicts, newEventsExportCmd(opts), newEventsImportCmd(opts), newEventsBatchCmd(opts), add, update, copyCmd, move, deleteCmd, remind, newEventsQuickAddCmd(opts))
 	return events
+}
+
+func preservedEventEnd(event *contract.Event, start time.Time, loc *time.Location) time.Time {
+	if !event.AllDay {
+		return start.Add(event.End.Sub(event.Start))
+	}
+	// Compare calendar dates in the selected zone without counting DST hours.
+	fromY, fromM, fromD := event.Start.In(loc).Date()
+	toY, toM, toD := event.End.In(loc).Date()
+	from := time.Date(fromY, fromM, fromD, 0, 0, 0, 0, time.UTC)
+	to := time.Date(toY, toM, toD, 0, 0, 0, 0, time.UTC)
+	days := int(to.Sub(from) / (24 * time.Hour))
+	return start.In(loc).AddDate(0, 0, days)
 }
 
 func minTime(a, b time.Time) time.Time {
