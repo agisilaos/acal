@@ -66,3 +66,35 @@ func TestListEventsMatchesUnicodeBeforeLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestGetEventPreservesLiteralText(t *testing.T) {
+	dbPath := buildSQLiteFixture(t, 1)
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const title = "  Review\t\n"
+	const location = "\n  Room 4\t"
+	const notes = "  Keep indentation\nsecond line\n"
+	const url = " https://example.com/path "
+	const calendar = "  Work  "
+	if _, err := db.Exec(`UPDATE CalendarItem SET summary = ?, description = ?, url = ?`, title, notes, url); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE Location SET title = ?`, location); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE Calendar SET title = ?`, calendar); err != nil {
+		t.Fatal(err)
+	}
+	useCalendarFixture(t, dbPath)
+	stubLookupAppleScript(t, "unexpected fallback", true)
+	event, err := NewOsaScriptBackend().GetEventByID(context.Background(), "uid-1@1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Title != title || event.Location != location || event.Notes != notes || event.URL != url || event.CalendarName != calendar {
+		t.Fatalf("event text changed during lookup: %+v", event)
+	}
+}
