@@ -30,7 +30,8 @@ Reconcile relevant docs and issue state with the result. Commit when authorized.
 
 When authorized to push, run `scripts/session land` using the session worktree's copy
 of the script. A landing requires a clean worktree on its original task branch,
-linear commits, and one `origin` URL shared by fetch and push.
+linear commits, and one `origin` URL shared by fetch and push. For HTTPS authentication,
+use a Git credential helper and keep credentials out of the URL.
 
 1. The script fetches and rebases onto `origin/main`. If Git stops on a conflict,
    resolve or abort the rebase before retrying. If `main` was rolled back past the
