@@ -54,7 +54,7 @@ def git_config_env(config):
 
 
 def worktree_git_env(cwd=None, remote_config=None):
-    config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
+    config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false", "submodule.recurse": "false"}
     drivers = subprocess.run(
         ["git", "config", "--null", "--name-only", "--get-regexp",
          r"^(filter\..*\.(clean|smudge|process|required)|merge\..*\.driver|hook\..*\.command)$"],
@@ -224,12 +224,17 @@ def review(base, head, evidence):
         "additionalProperties": False,
     }))
     verdict = evidence / "review.json"
-    inspect = f"env GIT_GRAFT_FILE=/dev/null git --no-replace-objects -C {shlex.quote(str(Path.cwd()))}"
+    inspect = (
+        "env GIT_GRAFT_FILE=/dev/null git -c advice.graftFileDeprecated=false --no-replace-objects "
+        f"-C {shlex.quote(str(Path.cwd()))}"
+    )
     prompt = (
         f"Review the committed acal change from {base} to {head}. "
         f"Inspect each commit with {inspect} log --reverse --format=fuller --no-notes --no-show-signature "
-        f"-p --text --no-ext-diff --no-textconv {base}..{head}. "
+        f"-p --text --no-ext-diff --no-textconv --ignore-submodules=none {base}..{head}. "
         f"Use {inspect} cat-file commit <commit> to inspect each raw header and message. "
+        f"Compare each patch with {inspect} diff-tree --no-commit-id -r --raw --no-abbrev "
+        "--ignore-submodules=none <commit> to account for every tree entry, including gitlinks. "
         f"Use {inspect} show <commit>:<path> to read changed content in its own commit, "
         "including files deleted in a later commit. If a changed blob is opaque or its "
         "diff is truncated, inspect the blob directly. Report any payload you cannot inspect. "
@@ -306,7 +311,7 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
 
 
 def verify(common_dir, head, evidence):
-    env = {key: value for key, value in os.environ.items() if not key.startswith("BASH_FUNC_")}
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("BASH_FUNC_", "PYTHON"))}
     env.update(PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
     for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS",
                      "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
@@ -442,7 +447,7 @@ def end(common_dir, path, branch):
         clean_checkout(path)
         if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
             raise SessionError("The task branch or tip changed during cleanup. Run end again.")
-        git("worktree", "remove", str(path))
+        git("worktree", "remove", str(path), env=worktree_git_env(path))
         git("update-ref", "-d", f"refs/heads/{branch}", head)
     print(f"Removed {path} and {branch}.")
 
@@ -478,13 +483,15 @@ def sanitize_environment(driver, worktree):
     for variable in list(os.environ):
         if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
             os.environ.pop(variable)
-    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
+    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME"):
         value = os.environ.get(variable)
         if value and (not os.path.isabs(value) or inside_checkout(Path(value).resolve(), checkout_ids)):
             os.environ.pop(variable, None)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     os.environ["GIT_GRAFT_FILE"] = "/dev/null"
     os.environ["GIT_PAGER"] = "cat"
+    os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="advice.graftFileDeprecated",
+                      GIT_CONFIG_VALUE_0="false")
 
 
 def main(source):
