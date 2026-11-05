@@ -196,9 +196,11 @@ def is_ancestor(older, newer, cwd=None):
 
 def includes_rolled_back_main(base):
     tips = set(git("reflog", "show", "--no-show-signature", "--format=%H", TRACKING).splitlines())
-    for entry in git("reflog", "show", "--no-show-signature", "--format=%H%x09%gs", "HEAD").splitlines():
+    entries = git("reflog", "show", "--no-show-signature", "--format=%H%x09%gs", "HEAD").splitlines()
+    for entry, previous in zip(entries, entries[1:]):
         sha, _, action = entry.partition("\t")
-        if action.startswith("rebase (start): checkout "):
+        previous_head = previous.partition("\t")[0]
+        if action.startswith("rebase (start): checkout ") and not is_ancestor(sha, previous_head):
             tips.add(sha)
     if not tips:
         return False
@@ -406,7 +408,7 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
         record["rebasing_onto"] = base
         write_session(record)
         subprocess.run(
-            ["git", "-c", "rebase.instructionFormat=%s", "rebase",
+            ["git", "-c", "rebase.instructionFormat=%s", "rebase", "--merge",
              "--no-autostash", "--no-autosquash", "--no-update-refs", "--no-gpg-sign",
              "--reapply-cherry-picks", base, branch],
             env=worktree_git_env(), check=True,
@@ -452,11 +454,24 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
 
 def branch_worktrees(branch_ref):
     registered = git("worktree", "list", "--porcelain", "-z").split("\0\0")
-    return {
-        Path(fields[0].removeprefix("worktree ")).resolve()
-        for fields in (entry.split("\0") for entry in registered)
-        if fields[0].startswith("worktree ") and f"branch {branch_ref}" in fields
-    }
+    holders = set()
+    for entry in registered:
+        fields = entry.split("\0")
+        if not fields[0].startswith("worktree "):
+            continue
+        path = Path(fields[0].removeprefix("worktree ")).resolve()
+        if f"branch {branch_ref}" in fields:
+            holders.add(path)
+        elif "detached" in fields and path.is_dir():
+            for state in ("rebase-merge", "rebase-apply"):
+                head_name = Path(git("rev-parse", "--path-format=absolute", "--git-path",
+                                     f"{state}/head-name", cwd=path))
+                if head_name.is_file() and head_name.read_text().strip() == branch_ref:
+                    holders.add(path)
+            bisect = Path(git("rev-parse", "--path-format=absolute", "--git-path", "BISECT_START", cwd=path))
+            if bisect.is_file() and bisect.read_text().strip() in (branch_ref, branch_ref.removeprefix("refs/heads/")):
+                holders.add(path)
+    return holders
 
 
 def end(common_dir, main_checkout, path, branch):
