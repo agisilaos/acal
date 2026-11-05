@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Start, inspect, land, and close isolated acal worktrees."""
 
 import argparse
@@ -41,17 +41,19 @@ def git_config_env(config):
     return env
 
 
-def worktree_git_env(cwd=None):
-    config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
+def worktree_git_env(cwd=None, remote_config=None):
+    config = {**(remote_config or {}), "core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
     drivers = subprocess.run(
         ["git", "config", "--null", "--name-only", "--get-regexp",
-         r"^(filter\..*\.(clean|smudge|process|required)|merge\..*\.driver)$"],
+         r"^(filter\..*\.(clean|smudge|process|required)|merge\..*\.driver|hook\..*\.command)$"],
         cwd=cwd, stdout=subprocess.PIPE, text=True,
     )
     if drivers.returncode != 1:
         drivers.check_returncode()
     for key in drivers.stdout.split("\0"):
-        if key:
+        if key.startswith("hook."):
+            config[f"{key.rsplit('.', 1)[0]}.enabled"] = "false"
+        elif key:
             config[key] = "false" if key.endswith((".required", ".driver")) else ""
     return git_config_env(config)
 
@@ -67,9 +69,9 @@ def session_lock(common_dir):
         yield
 
 
-def fetch_main(target="origin", env=None, *, cwd=None):
-    git("-c", "core.hooksPath=/dev/null", "fetch", "--quiet", "--no-tags",
-        "--no-prune", "--no-prune-tags", "--refmap=",
+def fetch_main(target="origin", remote_config=None, *, cwd=None):
+    env = worktree_git_env(cwd, remote_config)
+    git("fetch", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--refmap=",
         "--no-write-fetch-head", "--", target, f"+{MAIN}:{TRACKING}", cwd=cwd, env=env)
     return git("rev-parse", TRACKING, cwd=cwd)
 
@@ -196,7 +198,8 @@ def review(base, head, evidence):
     inspect = f"git --no-replace-objects -C {shlex.quote(str(Path.cwd()))}"
     prompt = (
         f"Review the committed acal change from {base} to {head}. "
-        f"Inspect each commit with {inspect} log --reverse -p --text --no-ext-diff --no-textconv {base}..{head}. "
+        f"Inspect each commit with {inspect} log --reverse --format=fuller --no-notes --no-show-signature "
+        f"-p --text --no-ext-diff --no-textconv {base}..{head}. "
         f"Use {inspect} show <commit>:<path> to read changed content in its own commit, "
         "including files deleted in a later commit. If a changed blob is opaque or its "
         "diff is truncated, inspect the blob directly. Report any payload you cannot inspect. "
@@ -255,7 +258,7 @@ def pin_remote(target):
         f"remote.{name}.pushurl": sentinel,
         f"url.{target}.insteadOf": sentinel,
     }
-    return name, git_config_env(config)
+    return name, config
 
 
 def check_candidate(branch, head, target, remote, base, phase, main_checkout):
@@ -367,7 +370,8 @@ def land(common_dir, dry_run, bootstrap, running_driver):
                 "--no-follow-tags", "--recurse-submodules=no"]
         if dry_run:
             push.extend(("--dry-run", "--no-verify"))
-        name, env = remote
+        name, remote_config = remote
+        env = worktree_git_env(main_checkout, remote_config) if dry_run else git_config_env(remote_config)
         git(*push, "--", name, f"{head}:{MAIN}", cwd=main_checkout, env=env)
         if dry_run:
             print(f"Dry run passed for {head}.")
@@ -399,6 +403,21 @@ def end(common_dir, path, branch):
     print(f"Removed {path} and {branch}.")
 
 
+def sanitize_environment():
+    os.environ["PATH"] = os.pathsep.join(
+        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
+    )
+    # Git location overrides would otherwise defeat the explicit checkout selection.
+    for variable in (
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG",
+        "GIT_CONFIG_PARAMETERS", "GIT_GRAFT_FILE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+        "GIT_REPLACE_REF_BASE", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH",
+    ):
+        os.environ.pop(variable, None)
+    os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+
+
 def main(source):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -418,10 +437,7 @@ def main(source):
     if getattr(args, "issue", None) is not None and not re.fullmatch(r"[1-9][0-9]*", args.issue):
         parser.error("--issue must be a positive GitHub issue number")
 
-    os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
-    os.environ["PATH"] = os.pathsep.join(
-        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
-    )
+    sanitize_environment()
     worktree = args.worktree.resolve() if args.command == "land" and args.worktree else None
     driver = Path(__file__).resolve().parent.parent
     os.chdir(driver)
