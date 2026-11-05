@@ -176,10 +176,7 @@ def review_client():
                 return str(bundled)
     if override is not None and not Path(override).is_absolute():
         raise SessionError("Set ACAL_CODEX to an absolute Codex CLI path.")
-    search_path = os.pathsep.join(
-        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
-    )
-    client = shutil.which(override if override is not None else "codex", path=search_path)
+    client = shutil.which(override if override is not None else "codex")
     if client is None:
         raise SessionError("Codex is unavailable. Set ACAL_CODEX to a Codex CLI executable.")
     return str(Path(client).absolute())
@@ -337,7 +334,8 @@ def land(common_dir, dry_run, bootstrap, running_driver):
         record["rebasing_onto"] = base
         write_session(record)
         subprocess.run(
-            ["git", "rebase", "--no-autostash", "--no-update-refs", "--no-gpg-sign",
+            ["git", "-c", "rebase.instructionFormat=%s", "rebase",
+             "--no-autostash", "--no-autosquash", "--no-update-refs", "--no-gpg-sign",
              "--reapply-cherry-picks", base, branch],
             env=worktree_git_env(), check=True,
         )
@@ -401,7 +399,7 @@ def end(common_dir, path, branch):
     print(f"Removed {path} and {branch}.")
 
 
-def main():
+def main(source):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser("start", help="create a worktree from GitHub's current main")
@@ -421,6 +419,9 @@ def main():
         parser.error("--issue must be a positive GitHub issue number")
 
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    os.environ["PATH"] = os.pathsep.join(
+        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
+    )
     worktree = args.worktree.resolve() if args.command == "land" and args.worktree else None
     driver = Path(__file__).resolve().parent.parent
     os.chdir(driver)
@@ -428,7 +429,9 @@ def main():
     if args.command == "list":
         print(git("worktree", "list"))
     elif args.command == "land":
-        running_driver = git("hash-object", "--no-filters", "scripts/session")
+        running_driver = subprocess.check_output(
+            ["git", "hash-object", "--stdin"], input=source,
+        ).decode("ascii").strip()
         if driver != common_dir.parent and not args.bootstrap:
             raise SessionError("Run the main checkout's scripts/session land --worktree <path>.")
         if args.bootstrap and (driver == common_dir.parent or (worktree is not None and worktree != driver)):
@@ -451,12 +454,25 @@ def main():
             end(common_dir, path, branch)
 
 
-if __name__ == "__main__":
+def run(source):
     try:
-        main()
+        main(source)
     except subprocess.CalledProcessError as error:
         print(f"session: {Path(error.cmd[0]).name} exited {error.returncode}.", file=sys.stderr)
         sys.exit(1)
     except (SessionError, OSError) as error:
         print(f"session: {error}", file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    if "_SESSION_SOURCE" in globals():
+        run(_SESSION_SOURCE)
+    else:
+        # Read once and execute those same bytes so a concurrent checkout update
+        # cannot make an older process identify itself as the newer driver.
+        path = Path(__file__).resolve()
+        source = path.read_bytes()
+        exec(compile(source, str(path), "exec"), {
+            "__name__": "__main__", "__file__": str(path), "_SESSION_SOURCE": source,
+        })
