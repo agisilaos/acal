@@ -333,7 +333,8 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
 
 def verify(main_checkout, head, evidence):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
-    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS"):
+    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES",
+                     "GOFLAGS", "GOCACHEPROG"):
         env.pop(variable, None)
     with tempfile.TemporaryDirectory(prefix="acal-verify-") as checkout:
         git("clone", "--quiet", "--shared", "--no-checkout", str(main_checkout), checkout,
@@ -344,6 +345,7 @@ def verify(main_checkout, head, evidence):
         run_logged(["make", "verify"], log, cwd=checkout, env=env)
         if "[verify] passed" not in log.read_text().splitlines():
             raise SessionError(f"Verification did not report completion. See {log}.")
+        clean_checkout(checkout)
 
 
 def check_driver(base, main_checkout, running_driver):
@@ -357,6 +359,13 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
         raise SessionError("Land from the session worktree.")
     if git("rev-parse", "--is-shallow-repository", cwd=main_checkout) == "true":
         raise SessionError("Landing requires a full clone to review complete commit history.")
+    promisor = subprocess.run(
+        ["git", "config", "--name-only", "--get-regexp", r"^(extensions\.partialclone|remote\..*\.promisor)$"],
+        cwd=main_checkout, stdout=subprocess.PIPE, text=True,
+    )
+    if promisor.returncode != 1:
+        promisor.check_returncode()
+        raise SessionError("Landing requires a full clone with no configured promisor remote.")
     with session_lock(common_dir):
         clean_checkout()
         branch = git("branch", "--show-current")
@@ -490,7 +499,6 @@ def end(common_dir, main_checkout, path, branch):
         if not is_ancestor(head, base):
             raise SessionError(f"{branch} has commits outside origin/main. Land them before ending.")
         if path.exists():
-            clean_checkout(path)
             env = worktree_git_env(path)
             modules = Path(git("rev-parse", "--path-format=absolute", "--git-path", "modules", cwd=path))
             entries = git("ls-files", "--stage", "-z", cwd=path, env=env).split("\0")
@@ -501,8 +509,12 @@ def end(common_dir, main_checkout, path, branch):
                 raise SessionError("This session has submodule metadata. Preserve it and clean up manually.")
             if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
                 raise SessionError("The task branch or tip changed during cleanup. Run end again.")
+            clean_checkout(path)
             pending.write_text(f"{head}\n")
             git("worktree", "remove", str(path), env=env)
+        elif path in holders:
+            # Git can finish removing a stale registration for a missing checkout.
+            git("worktree", "remove", str(path), env=worktree_git_env(main_checkout))
         if branch_worktrees(branch_ref):
             raise SessionError(f"{branch} is checked out in another worktree.")
         branch_exists = subprocess.run(
@@ -559,6 +571,7 @@ def sanitize_environment(driver, worktree):
             raise SessionError("Landing requires a home directory outside the checkouts.")
         os.environ["HOME"] = str(trusted_home)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    os.environ["GIT_NO_LAZY_FETCH"] = "1"
     os.environ["GIT_GRAFT_FILE"] = "/dev/null"
     os.environ["GIT_PAGER"] = "cat"
     os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="advice.graftFileDeprecated",
