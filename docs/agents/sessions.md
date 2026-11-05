@@ -35,6 +35,7 @@ main checkout with the driver version on `origin/main`. This checkout supplies t
 driver, including when the task changes `scripts/session`. A landing requires a
 clean worktree on its original task branch,
 linear commits in a full clone, Git 2.46 or newer, and one `origin` URL shared by fetch and push.
+Use primary and task checkouts without initialized submodule metadata.
 For HTTPS authentication, use a Git credential helper and keep credentials out of
 the URL.
 

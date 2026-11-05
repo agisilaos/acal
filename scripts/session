@@ -85,7 +85,8 @@ def session_lock(common_dir):
 def fetch_main(target="origin", remote_config=None, *, cwd=None):
     env = worktree_git_env(cwd, remote_config)
     git("fetch", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--refmap=",
-        "--no-write-fetch-head", "--", target, f"+{MAIN}:{TRACKING}", cwd=cwd, env=env)
+        "--no-write-fetch-head", "--no-recurse-submodules", "--", target, f"+{MAIN}:{TRACKING}",
+        cwd=cwd, env=env)
     return git("rev-parse", TRACKING, cwd=cwd)
 
 
@@ -163,17 +164,27 @@ def start(common_dir, main_checkout, path, branch, issue):
     print(path)
 
 
-def clean_checkout(cwd=None):
+def clean_checkout(cwd=None, *, include_ignored=True):
     for state in ("rebase-merge", "rebase-apply", "sequencer", "MERGE_HEAD",
                   "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START"):
         if Path(git("rev-parse", "--path-format=absolute", "--git-path", state, cwd=cwd)).exists():
             raise SessionError(f"A Git operation is in progress ({state}). Finish or abort it first.")
     env = worktree_git_env(cwd)
+    root = Path(cwd) if cwd is not None else Path.cwd()
     entries = git("ls-files", "-v", "-z", cwd=cwd, env=env).split("\0")
     if any(entry and (entry[0].islower() or entry.startswith("S ")) for entry in entries):
         raise SessionError("Clear assume-unchanged and skip-worktree index flags before proceeding.")
-    if git("status", "--porcelain", "--untracked-files=normal", "--ignored", "--ignore-submodules=none",
-           cwd=cwd, env=env):
+    modules = Path(git("rev-parse", "--path-format=absolute", "--git-path", "modules", cwd=cwd))
+    indexed = git("ls-files", "--stage", "-z", cwd=cwd, env=env).split("\0")
+    if modules.is_dir() or any(
+        (root / entry.partition("\t")[2] / ".git").exists()
+        for entry in indexed if entry.startswith("160000 ")
+    ):
+        raise SessionError("This checkout has submodule metadata. Preserve it and use a separate session.")
+    flags = ["--porcelain", "--untracked-files=normal", "--ignore-submodules=none"]
+    if include_ignored:
+        flags.append("--ignored")
+    if git("status", *flags, cwd=cwd, env=env):
         raise SessionError("The worktree contains local files or edits. Inspect git status before proceeding.")
 
 
@@ -337,9 +348,10 @@ def check_primary(main_checkout):
     env = worktree_git_env(main_checkout)
     if git("branch", "--show-current", cwd=main_checkout, env=env) != "main":
         raise SessionError("Use the primary checkout on main.")
-    if git("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none",
-           cwd=main_checkout, env=env):
-        raise SessionError("The primary checkout has local changes. Use a clean main checkout.")
+    try:
+        clean_checkout(main_checkout, include_ignored=False)
+    except SessionError as error:
+        raise SessionError(f"Use a clean main checkout. {error}") from None
 
 
 def verify(main_checkout, head, evidence):
@@ -530,13 +542,6 @@ def end(common_dir, main_checkout, path, branch):
             raise SessionError(f"{branch} has commits outside origin/main. Land them before ending.")
         if path.exists():
             env = worktree_git_env(path)
-            modules = Path(git("rev-parse", "--path-format=absolute", "--git-path", "modules", cwd=path))
-            entries = git("ls-files", "--stage", "-z", cwd=path, env=env).split("\0")
-            if modules.is_dir() or any(
-                (path / entry.partition("\t")[2] / ".git").exists()
-                for entry in entries if entry.startswith("160000 ")
-            ):
-                raise SessionError("This session has submodule metadata. Preserve it and clean up manually.")
             if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
                 raise SessionError("The task branch or tip changed during cleanup. Run end again.")
             clean_checkout(path)
