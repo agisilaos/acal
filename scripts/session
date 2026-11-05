@@ -278,7 +278,7 @@ def pin_remote(target, main_checkout):
     fetch_urls = git("remote", "get-url", "--all", "origin", cwd=main_checkout, env=env)
     push_urls = git("remote", "get-url", "--push", "--all", "origin", cwd=main_checkout, env=env)
     if fetch_urls != target or push_urls != target:
-        raise SessionError("Git could not pin origin to the checked URL.")
+        raise SessionError("Git could not pin origin to the checked URL. Landing requires Git 2.46 or newer.")
     return "origin", config
 
 
@@ -453,7 +453,7 @@ def sanitize_environment(driver, worktree):
     # Git location overrides would otherwise defeat the explicit checkout selection.
     for variable in (
         "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_EXEC_PATH",
         "GIT_CONFIG_PARAMETERS", "GIT_GRAFT_FILE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
         "GIT_REPLACE_REF_BASE", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH",
     ):

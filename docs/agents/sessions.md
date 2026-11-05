@@ -31,8 +31,9 @@ Reconcile relevant docs and issue state with the result. Commit when authorized.
 When authorized to push, use `scripts/session land --worktree <path>` from a clean,
 current main checkout. The main checkout supplies the driver, including when the
 task changes `scripts/session`. A landing requires a clean worktree on its original task branch,
-linear commits, and one `origin` URL shared by fetch and push. For HTTPS authentication,
-use a Git credential helper and keep credentials out of the URL.
+linear commits, Git 2.46 or newer, and one `origin` URL shared by fetch and push.
+For HTTPS authentication, use a Git credential helper and keep credentials out of
+the URL.
 
 For the first installation, check out the reviewed driver on `fix/<name>` in a sibling
 worktree named `acal-<name>` based on the latest `origin/main`. Run
