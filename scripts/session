@@ -194,14 +194,10 @@ def is_ancestor(older, newer, cwd=None):
     return result.returncode == 0
 
 
-def includes_rolled_back_main(base):
+def includes_rolled_back_main(base, previous_tracking_tip):
     tips = set(git("reflog", "show", "--no-show-signature", "--format=%H", TRACKING).splitlines())
-    entries = git("reflog", "show", "--no-show-signature", "--format=%H%x09%gs", "HEAD").splitlines()
-    for entry, previous in zip(entries, entries[1:]):
-        sha, _, action = entry.partition("\t")
-        previous_head = previous.partition("\t")[0]
-        if action.startswith("rebase (start): checkout ") and not is_ancestor(sha, previous_head):
-            tips.add(sha)
+    if previous_tracking_tip:
+        tips.add(previous_tracking_tip)
     if not tips:
         return False
     old_main = subprocess.check_output(
@@ -334,10 +330,8 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
 
 
 def verify(main_checkout, head, evidence):
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("BASH_FUNC_", "PYTHON"))}
-    env.update(PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
-    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS",
-                     "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
+    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS"):
         env.pop(variable, None)
     with tempfile.TemporaryDirectory(prefix="acal-verify-") as checkout:
         git("clone", "--quiet", "--shared", "--no-checkout", str(main_checkout), checkout,
@@ -374,6 +368,7 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
             issue_is_open(issue)
         target = check_push_target(main_checkout)
         remote = pin_remote(target, main_checkout)
+        previous_tracking_tip = git("for-each-ref", "--format=%(objectname)", TRACKING, cwd=main_checkout)
         base = fetch_main(*remote, cwd=main_checkout)
         if bootstrap:
             if git("ls-tree", base, "--", "scripts/session", cwd=main_checkout):
@@ -397,9 +392,7 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
         if attempted_base and is_ancestor(attempted_base, "HEAD"):
             # A stopped rebase may have been completed by hand.
             record["base"] = attempted_base
-        # An abandoned tracking tip can contain intermediate commits that the
-        # worktree adopted by hand, even if those commits were never tips.
-        if not is_ancestor(record["base"], base) or includes_rolled_back_main(base):
+        if not is_ancestor(record["base"], base) or includes_rolled_back_main(base, previous_tracking_tip):
             raise SessionError("Main no longer descends from this session's base. Reconcile the rollback first.")
         if git("rev-list", "--merges", f"{base}..HEAD"):
             raise SessionError("The task contains merge commits. Make the branch linear first.")
@@ -539,10 +532,11 @@ def sanitize_environment(driver, worktree):
         "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_PREFIX", "GIT_SHALLOW_FILE",
         "GIT_REPLACE_REF_BASE", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH",
         "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS",
+        "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS",
     ):
         os.environ.pop(variable, None)
     for variable in list(os.environ):
-        if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
+        if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_", "BASH_FUNC_", "PYTHON")):
             os.environ.pop(variable)
     for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME", "CODEX_HOME"):
         value = os.environ.get(variable)

@@ -42,8 +42,9 @@ worktree named `acal-<name>` based on the latest `origin/main`. Run
 `scripts/session land --bootstrap` there. Bootstrap is available until GitHub's
 `main` contains the driver.
 
-1. Keep the session and tracking reflogs intact and let the script fetch and rebase
-   onto `origin/main`. If Git stops on a conflict,
+1. Keep the `origin/main` tracking reflog intact. Use the script for rebases onto
+   `origin/main`. Local preparation branches based on the same upstream base are
+   supported. If Git stops on a conflict,
    preserve that worktree for inspection and reconcile the task in a fresh session
    based on current `main`. If `main` was rolled back past the recorded base, compare
    the task with the rollback before starting fresh. In either case, run
