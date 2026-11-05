@@ -98,7 +98,7 @@ def read_session(cwd=None):
     except ValueError:
         raise SessionError(f"Invalid session metadata at {metadata}.") from None
     fields = {"branch", "base", "issue"}
-    if not isinstance(record, dict) or record.keys() - {"rebasing_onto"} != fields:
+    if not isinstance(record, dict) or record.keys() - {"rebasing_onto", "superseded"} != fields:
         raise SessionError(f"Invalid session metadata at {metadata}.")
     return record
 
@@ -142,6 +142,27 @@ def clean_checkout(cwd=None):
         raise SessionError("Clear assume-unchanged and skip-worktree index flags before proceeding.")
     if git("status", "--porcelain", "--untracked-files=normal", "--ignored", cwd=cwd, env=env):
         raise SessionError("The worktree contains local files or edits. Inspect git status before proceeding.")
+
+
+def release_issue(common_dir, path, branch):
+    with session_lock(common_dir):
+        if Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=path)).resolve() != common_dir:
+            raise SessionError(f"{path} is outside this clone.")
+        record = read_session(path)
+        rebase_active = any(
+            Path(git("rev-parse", "--path-format=absolute", "--git-path", state, cwd=path)).is_dir()
+            for state in ("rebase-merge", "rebase-apply")
+        )
+        if (
+            record.get("branch") != branch or not record.get("issue")
+            or not record.get("rebasing_onto") or not rebase_active
+        ):
+            raise SessionError("Choose a session with an issue and a stopped landing rebase.")
+        issue = record["issue"]
+        record["issue"] = None
+        record["superseded"] = True
+        write_session(record, cwd=path)
+    print(f"Released issue #{issue}. Preserved {path} for inspection.")
 
 
 def is_ancestor(older, newer, cwd=None):
@@ -296,6 +317,8 @@ def land(common_dir, dry_run, bootstrap, running_driver):
         clean_checkout()
         branch = git("branch", "--show-current")
         record = read_session()
+        if record.get("superseded"):
+            raise SessionError("This session released its issue for a retry. Land from the new session.")
         if not branch or branch == "main" or ((record or not bootstrap) and branch != record.get("branch")):
             raise SessionError("Land from the original branch of a worktree made by session start.")
         issue = record.get("issue")
@@ -404,9 +427,12 @@ def end(common_dir, path, branch):
 
 
 def sanitize_environment():
-    os.environ["PATH"] = os.pathsep.join(
+    search_path = os.pathsep.join(
         entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
     )
+    if not search_path:
+        raise SessionError("PATH must include an absolute tool directory.")
+    os.environ["PATH"] = search_path
     # Git location overrides would otherwise defeat the explicit checkout selection.
     for variable in (
         "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
@@ -431,6 +457,8 @@ def main(source):
     land_parser.add_argument("--dry-run", action="store_true", help="run the gates and rehearse the push")
     end_parser = commands.add_parser("end", help="remove a clean session that has landed")
     end_parser.add_argument("name")
+    release_parser = commands.add_parser("release-issue", help="release an issue after a rebase conflict")
+    release_parser.add_argument("name")
     args = parser.parse_args()
     if hasattr(args, "name") and not SESSION_NAME.fullmatch(args.name):
         parser.error("name must use lowercase letters, digits, and single hyphens")
@@ -466,6 +494,8 @@ def main(source):
         branch = f"fix/{args.name}"
         if args.command == "start":
             start(common_dir, path, branch, args.issue)
+        elif args.command == "release-issue":
+            release_issue(common_dir, path, branch)
         else:
             end(common_dir, path, branch)
 
