@@ -30,15 +30,16 @@ Reconcile relevant docs and issue state with the result. Commit when authorized.
 
 ## Land
 
-When authorized to push, use `scripts/session land --worktree <path>` from a clean,
-current main checkout. The main checkout supplies the driver, including when the
-task changes `scripts/session`. A landing requires a clean worktree on its original task branch,
+When authorized to push, use `scripts/session land --worktree <path>` from the clean
+main checkout with the driver version on `origin/main`. This checkout supplies the
+driver, including when the task changes `scripts/session`. A landing requires a
+clean worktree on its original task branch,
 linear commits in a full clone, Git 2.46 or newer, and one `origin` URL shared by fetch and push.
 For HTTPS authentication, use a Git credential helper and keep credentials out of
 the URL.
 
 For the first installation, check out the reviewed driver on `fix/<name>` in a sibling
-worktree named `acal-<name>` based on the latest `origin/main`. Run
+worktree named `<primary-name>-<name>` based on the latest `origin/main`. Run
 `scripts/session land --bootstrap` there. Bootstrap is available until GitHub's
 `main` contains the driver.
 
@@ -68,7 +69,8 @@ worktree named `acal-<name>` based on the latest `origin/main`. Run
 If `main` or the candidate moves during the gates, run `land` again to qualify the
 new range. The gates live in `scripts/session land`. Use that command for task landings.
 `scripts/session land --worktree <path> --dry-run` rebases, reviews, verifies, and
-rehearses the push without running pre-push hooks or publishing. Each attempt prints log paths under
+rehearses the push without running pre-push hooks or publishing. Rebase, review, and
+verification print log paths under
 `~/Library/Logs/acal/sessions/`.
 
 ## End

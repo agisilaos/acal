@@ -118,7 +118,10 @@ def session_file(cwd=None):
 
 
 def read_session(cwd=None):
-    metadata = session_file(cwd)
+    return read_session_metadata(session_file(cwd))
+
+
+def read_session_metadata(metadata):
     try:
         record = json.loads(metadata.read_text())
     except FileNotFoundError:
@@ -146,11 +149,10 @@ def start(common_dir, main_checkout, path, branch, issue):
             raise SessionError(f"{path} already exists. See session list.")
         if issue:
             issue_is_open(issue)
-            for field in git("worktree", "list", "--porcelain", "-z").split("\0"):
-                if field.startswith("worktree "):
-                    other = Path(field.removeprefix("worktree "))
-                    if other.exists() and read_session(other).get("issue") == issue:
-                        raise SessionError(f"Issue #{issue} already belongs to {other}. See session list.")
+            for metadata in (common_dir / "worktrees").glob(f"*/{SESSION_FILE}"):
+                owner = read_session_metadata(metadata)
+                if owner.get("issue") == issue:
+                    raise SessionError(f"Issue #{issue} already belongs to {owner['branch']}. See session list.")
         base = fetch_main(cwd=main_checkout)
         try:
             git("worktree", "add", "--no-track", "-b", branch, str(path), base)
@@ -331,6 +333,15 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
         raise SessionError(f"The task branch changed during {phase}. Run land again.")
 
 
+def check_primary(main_checkout):
+    env = worktree_git_env(main_checkout)
+    if git("branch", "--show-current", cwd=main_checkout, env=env) != "main":
+        raise SessionError("Use the primary checkout on main.")
+    if git("status", "--porcelain", "--untracked-files=normal", "--ignore-submodules=none",
+           cwd=main_checkout, env=env):
+        raise SessionError("The primary checkout has local changes. Use a clean main checkout.")
+
+
 def verify(main_checkout, head, evidence):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
     for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES",
@@ -346,6 +357,8 @@ def verify(main_checkout, head, evidence):
         if "[verify] passed" not in log.read_text().splitlines():
             raise SessionError(f"Verification did not report completion. See {log}.")
         clean_checkout(checkout)
+        if git("rev-parse", "HEAD", cwd=checkout) != head:
+            raise SessionError(f"Verification switched away from the reviewed commit. See {log}.")
 
 
 def check_driver(base, main_checkout, running_driver):
@@ -354,18 +367,41 @@ def check_driver(base, main_checkout, running_driver):
         raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
 
 
+def check_full_clone(main_checkout):
+    if git("rev-parse", "--is-shallow-repository", cwd=main_checkout) == "true":
+        raise SessionError("Landing requires a full clone to review complete commit history.")
+    for args in (("--get", "extensions.partialclone"), ("--type=bool", "--get-regexp", r"^remote\..*\.promisor$")):
+        result = subprocess.run(["git", "config", *args], cwd=main_checkout,
+                                stdout=subprocess.PIPE, text=True)
+        if result.returncode != 1:
+            result.check_returncode()
+            if args[0] == "--get" or any(line.endswith(" true") for line in result.stdout.splitlines()):
+                raise SessionError("Landing requires a full clone with no configured promisor remote.")
+
+
+def rebase_candidate(base, branch, evidence):
+    log = evidence / "rebase.log"
+    try:
+        run_logged(
+            ["git", "-c", "rebase.instructionFormat=%s", "rebase", "--merge",
+             "--no-autostash", "--no-autosquash", "--no-update-refs", "--no-gpg-sign",
+             "--reapply-cherry-picks", base, branch],
+            log, env=worktree_git_env(),
+        )
+    except SessionError:
+        for line in log.read_text().splitlines():
+            if line.startswith("CONFLICT"):
+                print(line, file=sys.stderr)
+        raise
+
+
 def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
     if Path.cwd() == main_checkout:
         raise SessionError("Land from the session worktree.")
-    if git("rev-parse", "--is-shallow-repository", cwd=main_checkout) == "true":
-        raise SessionError("Landing requires a full clone to review complete commit history.")
-    promisor = subprocess.run(
-        ["git", "config", "--name-only", "--get-regexp", r"^(extensions\.partialclone|remote\..*\.promisor)$"],
-        cwd=main_checkout, stdout=subprocess.PIPE, text=True,
-    )
-    if promisor.returncode != 1:
-        promisor.check_returncode()
-        raise SessionError("Landing requires a full clone with no configured promisor remote.")
+    check_full_clone(main_checkout)
+    logs = Path.home() / "Library" / "Logs" / "acal" / "sessions"
+    logs.mkdir(parents=True, exist_ok=True)
+    evidence = Path(tempfile.mkdtemp(prefix="land-", dir=logs))
     with session_lock(common_dir):
         clean_checkout()
         branch = git("branch", "--show-current")
@@ -389,9 +425,10 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
                 not branch.startswith("fix/") or not SESSION_NAME.fullmatch(name)
                 or Path.cwd() != main_checkout.with_name(f"{main_checkout.name}-{name}")
             ):
-                raise SessionError("Bootstrap from a sibling acal-<name> worktree on fix/<name>.")
+                raise SessionError(f"Bootstrap from a sibling {main_checkout.name}-<name> worktree on fix/<name>.")
         else:
             check_driver(base, main_checkout, running_driver)
+        check_primary(main_checkout)
         clean_checkout()
         if git("branch", "--show-current") != branch:
             raise SessionError("The task branch changed while fetching main. Run land again.")
@@ -411,12 +448,7 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
             raise SessionError("The task branch changed before rebase. Run land again.")
         record["rebasing_onto"] = base
         write_session(record)
-        subprocess.run(
-            ["git", "-c", "rebase.instructionFormat=%s", "rebase", "--merge",
-             "--no-autostash", "--no-autosquash", "--no-update-refs", "--no-gpg-sign",
-             "--reapply-cherry-picks", base, branch],
-            env=worktree_git_env(), check=True,
-        )
+        rebase_candidate(base, branch, evidence)
         record["base"] = base
         del record["rebasing_onto"]
         write_session(record)
@@ -428,9 +460,6 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
             raise SessionError("The candidate is not a fast-forward from origin/main.")
         clean_checkout()
 
-    logs = Path.home() / "Library" / "Logs" / "acal" / "sessions"
-    logs.mkdir(parents=True, exist_ok=True)
-    evidence = Path(tempfile.mkdtemp(prefix="land-", dir=logs))
     review(base, head, evidence)
 
     with session_lock(common_dir):
@@ -439,6 +468,7 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
         if issue:
             issue_is_open(issue)
         check_candidate(branch, head, target, remote, base, "verification", main_checkout)
+        check_primary(main_checkout)
         # The candidate descends from base. Requiring the remote to still be exactly
         # base makes this a fast-forward even if someone rewinds main before push.
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
