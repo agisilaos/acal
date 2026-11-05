@@ -7,6 +7,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import shlex
 import shutil
@@ -88,6 +89,16 @@ def fetch_main(target="origin", remote_config=None, *, cwd=None):
     return git("rev-parse", TRACKING, cwd=cwd)
 
 
+def primary_worktree():
+    first = git("worktree", "list", "--porcelain", "-z").split("\0\0", 1)[0].split("\0")
+    if not first[0].startswith("worktree ") or "bare" in first:
+        raise SessionError("A primary checkout is required.")
+    checkout = Path(first[0].removeprefix("worktree ")).resolve()
+    if not (checkout / ".git").is_dir():
+        raise SessionError("The primary checkout must contain its own .git directory.")
+    return checkout
+
+
 def issue_is_open(number):
     state = subprocess.check_output(
         ["gh", "issue", "view", number, "--repo", "agisilaos/acal", "--json", "state", "--jq", ".state"],
@@ -122,7 +133,7 @@ def write_session(record, cwd=None):
     pending.replace(metadata)
 
 
-def start(common_dir, path, branch, issue):
+def start(common_dir, main_checkout, path, branch, issue):
     with session_lock(common_dir):
         if os.path.lexists(path):
             raise SessionError(f"{path} already exists. See session list.")
@@ -133,7 +144,7 @@ def start(common_dir, path, branch, issue):
                     other = Path(field.removeprefix("worktree "))
                     if other.exists() and read_session(other).get("issue") == issue:
                         raise SessionError(f"Issue #{issue} already belongs to {other}. See session list.")
-        base = fetch_main(cwd=common_dir.parent)
+        base = fetch_main(cwd=main_checkout)
         try:
             git("worktree", "add", "--no-track", "-b", branch, str(path), base)
         finally:
@@ -310,14 +321,14 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
         raise SessionError(f"The task branch changed during {phase}. Run land again.")
 
 
-def verify(common_dir, head, evidence):
+def verify(main_checkout, head, evidence):
     env = {key: value for key, value in os.environ.items() if not key.startswith(("BASH_FUNC_", "PYTHON"))}
     env.update(PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
     for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS",
                      "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
         env.pop(variable, None)
     with tempfile.TemporaryDirectory(prefix="acal-verify-") as checkout:
-        git("clone", "--quiet", "--shared", "--no-checkout", str(common_dir.parent), checkout,
+        git("clone", "--quiet", "--shared", "--no-checkout", str(main_checkout), checkout,
             env=worktree_git_env())
         git("checkout", "--quiet", "--detach", head, cwd=checkout, env=worktree_git_env(checkout))
         clean_checkout(checkout)
@@ -333,8 +344,7 @@ def check_driver(base, main_checkout, running_driver):
         raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
 
 
-def land(common_dir, dry_run, bootstrap, running_driver):
-    main_checkout = common_dir.parent
+def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
     if Path.cwd() == main_checkout:
         raise SessionError("Land from the session worktree.")
     if git("rev-parse", "--is-shallow-repository", cwd=main_checkout) == "true":
@@ -409,7 +419,7 @@ def land(common_dir, dry_run, bootstrap, running_driver):
 
     with session_lock(common_dir):
         check_candidate(branch, head, target, remote, base, "review", main_checkout)
-        verify(common_dir, head, evidence)
+        verify(main_checkout, head, evidence)
         if issue:
             issue_is_open(issue)
         check_candidate(branch, head, target, remote, base, "verification", main_checkout)
@@ -430,11 +440,11 @@ def land(common_dir, dry_run, bootstrap, running_driver):
             raise SessionError(f"Could not verify {head} on origin/main after push.")
 
 
-def end(common_dir, path, branch):
+def end(common_dir, main_checkout, path, branch):
     with session_lock(common_dir):
         if Path.cwd() == path:
             raise SessionError("Run end from outside the worktree being removed.")
-        base = fetch_main(cwd=common_dir.parent)
+        base = fetch_main(cwd=main_checkout)
         registered = git("worktree", "list", "--porcelain", "-z").split("\0\0")
         if not any(
             f"worktree {path}" in fields and f"branch refs/heads/{branch}" in fields
@@ -448,7 +458,8 @@ def end(common_dir, path, branch):
         if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
             raise SessionError("The task branch or tip changed during cleanup. Run end again.")
         git("worktree", "remove", str(path), env=worktree_git_env(path))
-        git("update-ref", "-d", f"refs/heads/{branch}", head)
+        git("update-ref", "-d", f"refs/heads/{branch}", head,
+            cwd=main_checkout, env=worktree_git_env(main_checkout))
     print(f"Removed {path} and {branch}.")
 
 
@@ -483,10 +494,16 @@ def sanitize_environment(driver, worktree):
     for variable in list(os.environ):
         if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
             os.environ.pop(variable)
-    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME"):
+    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME", "CODEX_HOME"):
         value = os.environ.get(variable)
         if value and (not os.path.isabs(value) or inside_checkout(Path(value).resolve(), checkout_ids)):
             os.environ.pop(variable, None)
+    home = os.environ.get("HOME")
+    if home and (not os.path.isabs(home) or inside_checkout(Path(home).resolve(), checkout_ids)):
+        trusted_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+        if inside_checkout(trusted_home, checkout_ids):
+            raise SessionError("Landing requires a home directory outside the checkouts.")
+        os.environ["HOME"] = str(trusted_home)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     os.environ["GIT_GRAFT_FILE"] = "/dev/null"
     os.environ["GIT_PAGER"] = "cat"
@@ -520,15 +537,16 @@ def main(source):
     sanitize_environment(driver, worktree)
     os.chdir(driver)
     common_dir = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+    home = primary_worktree()
     if args.command == "list":
         print(git("worktree", "list"))
     elif args.command == "land":
         running_driver = subprocess.check_output(
             ["git", "hash-object", "--stdin"], input=source,
         ).decode("ascii").strip()
-        if driver != common_dir.parent and not args.bootstrap:
+        if driver != home and not args.bootstrap:
             raise SessionError("Run the main checkout's scripts/session land --worktree <path>.")
-        if args.bootstrap and (driver == common_dir.parent or (worktree is not None and worktree != driver)):
+        if args.bootstrap and (driver == home or (worktree is not None and worktree != driver)):
             raise SessionError("Bootstrap from the task worktree containing the new driver.")
         if worktree is not None:
             os.chdir(worktree)
@@ -537,17 +555,16 @@ def main(source):
                 or Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != common_dir
             ):
                 raise SessionError("--worktree must point to a checkout root in this clone.")
-        land(common_dir, args.dry_run, args.bootstrap, running_driver)
+        land(common_dir, home, args.dry_run, args.bootstrap, running_driver)
     else:
-        home = common_dir.parent
         path = home.with_name(f"{home.name}-{args.name}")
         branch = f"fix/{args.name}"
         if args.command == "start":
-            start(common_dir, path, branch, args.issue)
+            start(common_dir, home, path, branch, args.issue)
         elif args.command == "release-issue":
             release_issue(common_dir, path, branch)
         else:
-            end(common_dir, path, branch)
+            end(common_dir, home, path, branch)
 
 
 def run(source):

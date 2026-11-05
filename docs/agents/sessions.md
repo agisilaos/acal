@@ -3,6 +3,8 @@
 Use a separate worktree and branch for each implementation chat. GitHub issues hold the
 spec and decisions. Keep generated evidence outside the checkout.
 
+The primary checkout must contain its own `.git` directory.
+
 ## Start
 
 1. Read the issue and its comments, check related work, and run `scripts/session list`.
