@@ -34,8 +34,9 @@ task changes `scripts/session`. A landing requires a clean worktree on its origi
 linear commits, and one `origin` URL shared by fetch and push. For HTTPS authentication,
 use a Git credential helper and keep credentials out of the URL.
 
-For the first installation, run `scripts/session land --bootstrap` from the reviewed
-task worktree. Bootstrap is available until GitHub's `main` contains the driver.
+For the first installation, check out the reviewed driver on a task branch in a
+linked worktree based on the latest `origin/main`. Run `scripts/session land --bootstrap`
+from that worktree. Bootstrap is available until GitHub's `main` contains the driver.
 
 1. Let the script fetch and rebase onto `origin/main`. If Git stops on a conflict,
    resolve or abort the rebase it started before retrying. If `main` was rolled

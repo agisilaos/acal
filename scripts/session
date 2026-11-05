@@ -42,16 +42,16 @@ def git_config_env(config):
 
 def worktree_git_env(cwd=None):
     config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
-    filters = subprocess.run(
+    drivers = subprocess.run(
         ["git", "config", "--null", "--name-only", "--get-regexp",
-         r"^filter\..*\.(clean|smudge|process|required)$"],
+         r"^(filter\..*\.(clean|smudge|process|required)|merge\..*\.driver)$"],
         cwd=cwd, stdout=subprocess.PIPE, text=True,
     )
-    if filters.returncode != 1:
-        filters.check_returncode()
-    for key in filters.stdout.split("\0"):
+    if drivers.returncode != 1:
+        drivers.check_returncode()
+    for key in drivers.stdout.split("\0"):
         if key:
-            config[key] = "false" if key.endswith(".required") else ""
+            config[key] = "false" if key.endswith((".required", ".driver")) else ""
     return git_config_env(config)
 
 
@@ -256,7 +256,7 @@ def pin_remote(target):
 
 
 def check_candidate(branch, head, target, remote, base, phase, main_checkout):
-    if check_push_target(main_checkout) != target or fetch_main(*remote) != base:
+    if check_push_target(main_checkout) != target or fetch_main(*remote, cwd=main_checkout) != base:
         raise SessionError(f"Origin or main changed during {phase}. Run land again.")
     clean_checkout()
     if git("branch", "--show-current") != branch or git("rev-parse", "HEAD") != head:
@@ -265,7 +265,8 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
 
 def verify(common_dir, head, evidence):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
-    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS"):
+    for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS",
+                     "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
         env.pop(variable, None)
     with tempfile.TemporaryDirectory(prefix="acal-verify-") as checkout:
         git("clone", "--quiet", "--shared", "--no-checkout", str(common_dir.parent), checkout,
@@ -273,6 +274,13 @@ def verify(common_dir, head, evidence):
         git("checkout", "--quiet", "--detach", head, cwd=checkout, env=worktree_git_env(checkout))
         clean_checkout(checkout)
         run_logged(["make", "verify"], evidence / "verify.log", cwd=checkout, env=env)
+
+
+def check_driver(base, main_checkout):
+    expected = git("rev-parse", f"{base}:scripts/session", cwd=main_checkout)
+    actual = git("hash-object", "--no-filters", "scripts/session", cwd=main_checkout)
+    if actual != expected:
+        raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
 
 
 def land(common_dir, dry_run, bootstrap):
@@ -283,19 +291,26 @@ def land(common_dir, dry_run, bootstrap):
         clean_checkout()
         branch = git("branch", "--show-current")
         record = read_session()
-        if not branch or branch != record.get("branch"):
+        if not branch or branch == "main" or ((record or not bootstrap) and branch != record.get("branch")):
             raise SessionError("Land from the original branch of a worktree made by session start.")
-        issue = record["issue"]
+        issue = record.get("issue")
         if issue:
             issue_is_open(issue)
         target = check_push_target(main_checkout)
         remote = pin_remote(target)
-        base = fetch_main(*remote)
-        if bootstrap and git("ls-tree", base, "--", "scripts/session"):
-            raise SessionError("The driver is installed on main. Run land from the main checkout.")
+        base = fetch_main(*remote, cwd=main_checkout)
+        if bootstrap:
+            if git("ls-tree", base, "--", "scripts/session", cwd=main_checkout):
+                raise SessionError("The driver is installed on main. Run land from the main checkout.")
+        else:
+            check_driver(base, main_checkout)
         clean_checkout()
         if git("branch", "--show-current") != branch:
             raise SessionError("The task branch changed while fetching main. Run land again.")
+        if not record:
+            if not is_ancestor(base, "HEAD"):
+                raise SessionError("Base the bootstrap branch on the latest origin/main first.")
+            record = {"branch": branch, "base": base, "issue": None}
         attempted_base = record.pop("rebasing_onto", None)
         if attempted_base and is_ancestor(attempted_base, "HEAD"):
             # A stopped rebase may have been completed by hand.
@@ -341,10 +356,10 @@ def land(common_dir, dry_run, bootstrap):
         if dry_run:
             push.extend(("--dry-run", "--no-verify"))
         name, env = remote
-        git(*push, "--", name, f"{head}:{MAIN}", env=env)
+        git(*push, "--", name, f"{head}:{MAIN}", cwd=main_checkout, env=env)
         if dry_run:
             print(f"Dry run passed for {head}.")
-        elif is_ancestor(head, fetch_main(*remote)):
+        elif is_ancestor(head, fetch_main(*remote, cwd=main_checkout)):
             print(f"Landed {head} on origin/main.")
         else:
             raise SessionError(f"Could not verify {head} on origin/main after push.")
