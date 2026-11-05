@@ -105,7 +105,8 @@ def cleanup_record(common_dir, branch):
 
 def issue_is_open(number):
     state = subprocess.check_output(
-        ["gh", "issue", "view", number, "--repo", "agisilaos/acal", "--json", "state", "--jq", ".state"],
+        ["gh", "issue", "view", number, "--repo", "github.com/agisilaos/acal",
+         "--json", "state", "--jq", ".state"],
         text=True,
     ).strip()
     if state != "OPEN":
@@ -490,10 +491,18 @@ def end(common_dir, main_checkout, path, branch):
             raise SessionError(f"{branch} has commits outside origin/main. Land them before ending.")
         if path.exists():
             clean_checkout(path)
+            env = worktree_git_env(path)
+            modules = Path(git("rev-parse", "--path-format=absolute", "--git-path", "modules", cwd=path))
+            entries = git("ls-files", "--stage", "-z", cwd=path, env=env).split("\0")
+            if modules.is_dir() or any(
+                (path / entry.partition("\t")[2] / ".git").exists()
+                for entry in entries if entry.startswith("160000 ")
+            ):
+                raise SessionError("This session has submodule metadata. Preserve it and clean up manually.")
             if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
                 raise SessionError("The task branch or tip changed during cleanup. Run end again.")
             pending.write_text(f"{head}\n")
-            git("worktree", "remove", str(path), env=worktree_git_env(path))
+            git("worktree", "remove", str(path), env=env)
         if branch_worktrees(branch_ref):
             raise SessionError(f"{branch} is checked out in another worktree.")
         branch_exists = subprocess.run(

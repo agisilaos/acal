@@ -77,4 +77,5 @@ Record durable lessons in the relevant guide and leave unfinished work on its is
 From the main checkout, run `scripts/session end <name>` when cleanup is requested.
 It checks that the named worktree is clean, including local ignored files, and that its
 commits are on the latest `origin/main` before removing the worktree and its branch.
+Preserve sessions with initialized submodule metadata for manual cleanup.
 If branch removal stops after the worktree is gone, rerun `end` to finish cleanup.
