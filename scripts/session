@@ -30,6 +30,31 @@ def git(*args, cwd=None, env=None):
     return subprocess.check_output(["git", *args], cwd=cwd, env=env, text=True).rstrip("\n")
 
 
+def git_config_env(config):
+    env = os.environ.copy()
+    count = int(env.get("GIT_CONFIG_COUNT", "0"))
+    for index, (key, value) in enumerate(config.items(), start=count):
+        env[f"GIT_CONFIG_KEY_{index}"] = key
+        env[f"GIT_CONFIG_VALUE_{index}"] = value
+    env["GIT_CONFIG_COUNT"] = str(count + len(config))
+    return env
+
+
+def worktree_git_env(cwd=None):
+    config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
+    filters = subprocess.run(
+        ["git", "config", "--null", "--name-only", "--get-regexp",
+         r"^filter\..*\.(clean|smudge|process|required)$"],
+        cwd=cwd, stdout=subprocess.PIPE, text=True,
+    )
+    if filters.returncode != 1:
+        filters.check_returncode()
+    for key in filters.stdout.split("\0"):
+        if key:
+            config[key] = "false" if key.endswith(".required") else ""
+    return git_config_env(config)
+
+
 @contextmanager
 def session_lock(common_dir):
     with (common_dir / "acal-session.lock").open("a") as lock:
@@ -41,11 +66,11 @@ def session_lock(common_dir):
         yield
 
 
-def fetch_main(target="origin", env=None):
+def fetch_main(target="origin", env=None, *, cwd=None):
     git("-c", "core.hooksPath=/dev/null", "fetch", "--quiet", "--no-tags",
         "--no-prune", "--no-prune-tags", "--refmap=",
-        "--no-write-fetch-head", "--", target, f"+{MAIN}:{TRACKING}", env=env)
-    return git("rev-parse", TRACKING)
+        "--no-write-fetch-head", "--", target, f"+{MAIN}:{TRACKING}", cwd=cwd, env=env)
+    return git("rev-parse", TRACKING, cwd=cwd)
 
 
 def issue_is_open(number):
@@ -93,7 +118,7 @@ def start(common_dir, path, branch, issue):
                     other = Path(field.removeprefix("worktree "))
                     if other.exists() and read_session(other).get("issue") == issue:
                         raise SessionError(f"Issue #{issue} already belongs to {other}. See session list.")
-        base = fetch_main()
+        base = fetch_main(cwd=common_dir.parent)
         try:
             git("worktree", "add", "--no-track", "-b", branch, str(path), base)
         finally:
@@ -108,10 +133,11 @@ def clean_checkout(cwd=None):
                   "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START"):
         if Path(git("rev-parse", "--path-format=absolute", "--git-path", state, cwd=cwd)).exists():
             raise SessionError(f"A Git operation is in progress ({state}). Finish or abort it first.")
-    entries = git("-c", "core.fsmonitor=false", "ls-files", "-v", "-z", cwd=cwd).split("\0")
+    env = worktree_git_env(cwd)
+    entries = git("ls-files", "-v", "-z", cwd=cwd, env=env).split("\0")
     if any(entry and (entry[0].islower() or entry.startswith("S ")) for entry in entries):
         raise SessionError("Clear assume-unchanged and skip-worktree index flags before proceeding.")
-    if git("-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=normal", "--ignored", cwd=cwd):
+    if git("status", "--porcelain", "--untracked-files=normal", "--ignored", cwd=cwd, env=env):
         raise SessionError("The worktree contains local files or edits. Inspect git status before proceeding.")
 
 
@@ -122,15 +148,14 @@ def is_ancestor(older, newer, cwd=None):
     return result.returncode == 0
 
 
-def main_fork_point():
-    result = subprocess.run(
-        ["git", "merge-base", "--fork-point", TRACKING, "HEAD"],
-        stdout=subprocess.PIPE, text=True,
+def includes_rolled_back_main(base):
+    tips = set(git("reflog", "show", "--format=%H", TRACKING).splitlines())
+    if not tips:
+        return False
+    old_main = subprocess.check_output(
+        ["git", "rev-list", "--stdin"], input="\n".join([*tips, f"^{base}", ""]), text=True,
     )
-    if result.returncode == 1:
-        return None
-    result.check_returncode()
-    return result.stdout.strip()
+    return not set(old_main.splitlines()).isdisjoint(git("rev-list", f"{base}..HEAD").splitlines())
 
 
 def run_logged(command, log, **kwargs):
@@ -201,9 +226,10 @@ def review(base, head, evidence):
     print("Codex review passed.", flush=True)
 
 
-def check_push_target():
-    urls = git("remote", "get-url", "--all", "origin").splitlines()
-    if len(urls) != 1 or git("remote", "get-url", "--push", "--all", "origin").splitlines() != urls:
+def check_push_target(main_checkout):
+    urls = git("remote", "get-url", "--all", "origin", cwd=main_checkout).splitlines()
+    push_urls = git("remote", "get-url", "--push", "--all", "origin", cwd=main_checkout).splitlines()
+    if len(urls) != 1 or push_urls != urls:
         raise SessionError("Landing requires one origin URL shared by fetch and push.")
     target = urls[0]
     if target.lower().startswith(("https://", "http://")):
@@ -226,17 +252,11 @@ def pin_remote(target):
         f"remote.{name}.pushurl": sentinel,
         f"url.{target}.insteadOf": sentinel,
     }
-    env = os.environ.copy()
-    count = int(env.get("GIT_CONFIG_COUNT", "0"))
-    for index, (key, value) in enumerate(config.items(), start=count):
-        env[f"GIT_CONFIG_KEY_{index}"] = key
-        env[f"GIT_CONFIG_VALUE_{index}"] = value
-    env["GIT_CONFIG_COUNT"] = str(count + len(config))
-    return name, env
+    return name, git_config_env(config)
 
 
-def check_candidate(branch, head, target, remote, base, phase):
-    if check_push_target() != target or fetch_main(*remote) != base:
+def check_candidate(branch, head, target, remote, base, phase, main_checkout):
+    if check_push_target(main_checkout) != target or fetch_main(*remote) != base:
         raise SessionError(f"Origin or main changed during {phase}. Run land again.")
     clean_checkout()
     if git("branch", "--show-current") != branch or git("rev-parse", "HEAD") != head:
@@ -248,15 +268,16 @@ def verify(common_dir, head, evidence):
     for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS"):
         env.pop(variable, None)
     with tempfile.TemporaryDirectory(prefix="acal-verify-") as checkout:
-        git("-c", "core.hooksPath=/dev/null", "clone", "--quiet", "--shared",
-            "--no-checkout", str(common_dir.parent), checkout)
-        git("-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", head, cwd=checkout)
+        git("clone", "--quiet", "--shared", "--no-checkout", str(common_dir.parent), checkout,
+            env=worktree_git_env())
+        git("checkout", "--quiet", "--detach", head, cwd=checkout, env=worktree_git_env(checkout))
         clean_checkout(checkout)
         run_logged(["make", "verify"], evidence / "verify.log", cwd=checkout, env=env)
 
 
-def land(common_dir, dry_run):
-    if Path.cwd() == common_dir.parent:
+def land(common_dir, dry_run, bootstrap):
+    main_checkout = common_dir.parent
+    if Path.cwd() == main_checkout:
         raise SessionError("Land from the session worktree.")
     with session_lock(common_dir):
         clean_checkout()
@@ -267,9 +288,11 @@ def land(common_dir, dry_run):
         issue = record["issue"]
         if issue:
             issue_is_open(issue)
-        target = check_push_target()
+        target = check_push_target(main_checkout)
         remote = pin_remote(target)
         base = fetch_main(*remote)
+        if bootstrap and git("ls-tree", base, "--", "scripts/session"):
+            raise SessionError("The driver is installed on main. Run land from the main checkout.")
         clean_checkout()
         if git("branch", "--show-current") != branch:
             raise SessionError("The task branch changed while fetching main. Run land again.")
@@ -277,18 +300,17 @@ def land(common_dir, dry_run):
         if attempted_base and is_ancestor(attempted_base, "HEAD"):
             # A stopped rebase may have been completed by hand.
             record["base"] = attempted_base
-        # The tracking reflog can also identify a newer base from a manual rebase.
-        fork_point = main_fork_point()
-        if not is_ancestor(record["base"], base) or (fork_point and not is_ancestor(fork_point, base)):
+        # An abandoned tracking tip can contain intermediate commits that the
+        # worktree adopted by hand, even if those commits were never tips.
+        if not is_ancestor(record["base"], base) or includes_rolled_back_main(base):
             raise SessionError("Main no longer descends from this session's base. Reconcile the rollback first.")
         if git("rev-list", "--merges", f"{base}..HEAD"):
             raise SessionError("The task contains merge commits. Make the branch linear first.")
         record["rebasing_onto"] = base
         write_session(record)
         subprocess.run(
-            ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
-             "rebase", "--no-autostash", "--no-update-refs", "--reapply-cherry-picks", base],
-            check=True,
+            ["git", "rebase", "--no-autostash", "--no-update-refs", "--reapply-cherry-picks", base],
+            env=worktree_git_env(), check=True,
         )
         record["base"] = base
         del record["rebasing_onto"]
@@ -307,11 +329,11 @@ def land(common_dir, dry_run):
     review(base, head, evidence)
 
     with session_lock(common_dir):
-        check_candidate(branch, head, target, remote, base, "review")
+        check_candidate(branch, head, target, remote, base, "review", main_checkout)
         verify(common_dir, head, evidence)
         if issue:
             issue_is_open(issue)
-        check_candidate(branch, head, target, remote, base, "verification")
+        check_candidate(branch, head, target, remote, base, "verification", main_checkout)
         # The candidate descends from base. Requiring the remote to still be exactly
         # base makes this a fast-forward even if someone rewinds main before push.
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
@@ -332,7 +354,7 @@ def end(common_dir, path, branch):
     with session_lock(common_dir):
         if Path.cwd() == path:
             raise SessionError("Run end from outside the worktree being removed.")
-        base = fetch_main()
+        base = fetch_main(cwd=common_dir.parent)
         registered = git("worktree", "list", "--porcelain", "-z").split("\0\0")
         if not any(
             f"worktree {path}" in fields and f"branch refs/heads/{branch}" in fields
@@ -343,8 +365,8 @@ def end(common_dir, path, branch):
         if not is_ancestor(head, base):
             raise SessionError(f"{branch} has commits outside origin/main. Land them before ending.")
         clean_checkout(path)
-        if git("branch", "--show-current", cwd=path) != branch:
-            raise SessionError("The task branch changed during cleanup. Run end again.")
+        if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
+            raise SessionError("The task branch or tip changed during cleanup. Run end again.")
         git("worktree", "remove", str(path))
         git("update-ref", "-d", f"refs/heads/{branch}", head)
     print(f"Removed {path} and {branch}.")
@@ -359,6 +381,7 @@ def main():
     commands.add_parser("list", help="list local worktrees and branches")
     land_parser = commands.add_parser("land", help="review, verify, and push the committed task to main")
     land_parser.add_argument("--worktree", type=Path, help="target worktree when running from the main checkout")
+    land_parser.add_argument("--bootstrap", action="store_true", help="install the driver for the first time")
     land_parser.add_argument("--dry-run", action="store_true", help="run the gates and rehearse the push")
     end_parser = commands.add_parser("end", help="remove a clean session that has landed")
     end_parser.add_argument("name")
@@ -370,11 +393,16 @@ def main():
 
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     worktree = args.worktree.resolve() if args.command == "land" and args.worktree else None
-    os.chdir(Path(__file__).resolve().parent.parent)
+    driver = Path(__file__).resolve().parent.parent
+    os.chdir(driver)
     common_dir = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     if args.command == "list":
         print(git("worktree", "list"))
     elif args.command == "land":
+        if driver != common_dir.parent and not args.bootstrap:
+            raise SessionError("Run the main checkout's scripts/session land --worktree <path>.")
+        if args.bootstrap and (driver == common_dir.parent or (worktree is not None and worktree != driver)):
+            raise SessionError("Bootstrap from the task worktree containing the new driver.")
         if worktree is not None:
             os.chdir(worktree)
             if (
@@ -382,7 +410,7 @@ def main():
                 or Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != common_dir
             ):
                 raise SessionError("--worktree must point to a checkout root in this clone.")
-        land(common_dir, args.dry_run)
+        land(common_dir, args.dry_run, args.bootstrap)
     else:
         home = common_dir.parent
         path = home.with_name(f"{home.name}-{args.name}")
