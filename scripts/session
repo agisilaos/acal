@@ -31,6 +31,18 @@ def git(*args, cwd=None, env=None):
     return subprocess.check_output(["git", *args], cwd=cwd, env=env, text=True).rstrip("\n")
 
 
+def path_identity(path):
+    try:
+        metadata = path.stat()
+    except OSError:
+        return None
+    return metadata.st_dev, metadata.st_ino
+
+
+def inside_checkout(path, checkout_ids):
+    return any(path_identity(part) in checkout_ids for part in (path, *path.parents))
+
+
 def git_config_env(config):
     env = os.environ.copy()
     count = int(env.get("GIT_CONFIG_COUNT", "0"))
@@ -196,7 +208,7 @@ def review_client():
     if client is None:
         raise SessionError("Codex is unavailable. Set ACAL_CODEX to a Codex CLI executable.")
     executable = Path(client).resolve()
-    if executable.is_relative_to(Path.cwd()):
+    if inside_checkout(executable, {path_identity(Path.cwd())}):
         raise SessionError("Use a Codex CLI outside the task worktree.")
     return str(executable)
 
@@ -434,17 +446,18 @@ def end(common_dir, path, branch):
 
 def sanitize_environment(driver, worktree):
     excluded = (driver, worktree) if worktree is not None else (driver,)
+    checkout_ids = {path_identity(path) for path in excluded} - {None}
     entries = []
     for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
         if os.path.isabs(entry):
             path = Path(entry).resolve()
-            if not path.is_dir() or any(path.is_relative_to(root) for root in excluded):
+            if not path.is_dir() or inside_checkout(path, checkout_ids):
                 continue
             try:
                 links = [item.resolve() for item in path.iterdir() if item.is_symlink()]
             except (OSError, RuntimeError):
                 continue
-            if not any(link.is_relative_to(root) for link in links for root in excluded):
+            if not any(inside_checkout(link, checkout_ids) for link in links):
                 entries.append(str(path))
     search_path = os.pathsep.join(entries)
     if not search_path:
@@ -456,8 +469,13 @@ def sanitize_environment(driver, worktree):
         "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_EXEC_PATH",
         "GIT_CONFIG_PARAMETERS", "GIT_GRAFT_FILE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
         "GIT_REPLACE_REF_BASE", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH",
+        "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS",
     ):
         os.environ.pop(variable, None)
+    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
+        value = os.environ.get(variable)
+        if value and (not os.path.isabs(value) or inside_checkout(Path(value).resolve(), checkout_ids)):
+            os.environ.pop(variable, None)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
     os.environ["GIT_PAGER"] = "cat"
 
