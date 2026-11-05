@@ -169,7 +169,8 @@ def clean_checkout(cwd=None):
     entries = git("ls-files", "-v", "-z", cwd=cwd, env=env).split("\0")
     if any(entry and (entry[0].islower() or entry.startswith("S ")) for entry in entries):
         raise SessionError("Clear assume-unchanged and skip-worktree index flags before proceeding.")
-    if git("status", "--porcelain", "--untracked-files=normal", "--ignored", cwd=cwd, env=env):
+    if git("status", "--porcelain", "--untracked-files=normal", "--ignored", "--ignore-submodules=none",
+           cwd=cwd, env=env):
         raise SessionError("The worktree contains local files or edits. Inspect git status before proceeding.")
 
 
@@ -538,7 +539,7 @@ def sanitize_environment(driver, worktree):
     for variable in list(os.environ):
         if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_", "BASH_FUNC_", "PYTHON")):
             os.environ.pop(variable)
-    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME", "CODEX_HOME"):
+    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "XDG_CONFIG_HOME", "CODEX_HOME", "ZDOTDIR"):
         value = os.environ.get(variable)
         if value and (not os.path.isabs(value) or inside_checkout(Path(value).resolve(), checkout_ids)):
             os.environ.pop(variable, None)
