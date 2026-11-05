@@ -34,9 +34,10 @@ task changes `scripts/session`. A landing requires a clean worktree on its origi
 linear commits, and one `origin` URL shared by fetch and push. For HTTPS authentication,
 use a Git credential helper and keep credentials out of the URL.
 
-For the first installation, check out the reviewed driver on a task branch in a
-linked worktree based on the latest `origin/main`. Run `scripts/session land --bootstrap`
-from that worktree. Bootstrap is available until GitHub's `main` contains the driver.
+For the first installation, check out the reviewed driver on `fix/<name>` in a sibling
+worktree named `acal-<name>` based on the latest `origin/main`. Run
+`scripts/session land --bootstrap` there. Bootstrap is available until GitHub's
+`main` contains the driver.
 
 1. Let the script fetch and rebase onto `origin/main`. If Git stops on a conflict,
    resolve or abort the rebase it started before retrying. If `main` was rolled
@@ -46,7 +47,8 @@ from that worktree. Bootstrap is available until GitHub's `main` contains the dr
    in the exact range. Findings and incomplete reviews stop the landing. Address
    actionable findings in scope, then retry with the corrected commits. The script
    uses the desktop app's bundled CLI when installed
-   in `/Applications`, or `codex` on `PATH`. Set `ACAL_CODEX` to select another executable.
+   in `/Applications`, or `codex` on `PATH`. Set `ACAL_CODEX` to an absolute path
+   to select another executable.
 3. After review it rechecks the worktree, branch and remote base, runs `make verify`
    on a temporary checkout of the reviewed commit, then checks the candidate and
    remote again. A shared lock serializes Git operations and verification within

@@ -20,6 +20,7 @@ import uuid
 MAIN = "refs/heads/main"
 TRACKING = "refs/remotes/origin/main"
 SESSION_FILE = "acal-session.json"
+SESSION_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 class SessionError(Exception):
@@ -173,7 +174,12 @@ def review_client():
             bundled = Path("/Applications") / app / "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
             if bundled.is_file() and os.access(bundled, os.X_OK):
                 return str(bundled)
-    client = shutil.which(override if override is not None else "codex")
+    if override is not None and not Path(override).is_absolute():
+        raise SessionError("Set ACAL_CODEX to an absolute Codex CLI path.")
+    search_path = os.pathsep.join(
+        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
+    )
+    client = shutil.which(override if override is not None else "codex", path=search_path)
     if client is None:
         raise SessionError("Codex is unavailable. Set ACAL_CODEX to a Codex CLI executable.")
     return str(Path(client).absolute())
@@ -276,14 +282,13 @@ def verify(common_dir, head, evidence):
         run_logged(["make", "verify"], evidence / "verify.log", cwd=checkout, env=env)
 
 
-def check_driver(base, main_checkout):
+def check_driver(base, main_checkout, running_driver):
     expected = git("rev-parse", f"{base}:scripts/session", cwd=main_checkout)
-    actual = git("hash-object", "--no-filters", "scripts/session", cwd=main_checkout)
-    if actual != expected:
+    if running_driver != expected:
         raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
 
 
-def land(common_dir, dry_run, bootstrap):
+def land(common_dir, dry_run, bootstrap, running_driver):
     main_checkout = common_dir.parent
     if Path.cwd() == main_checkout:
         raise SessionError("Land from the session worktree.")
@@ -302,8 +307,14 @@ def land(common_dir, dry_run, bootstrap):
         if bootstrap:
             if git("ls-tree", base, "--", "scripts/session", cwd=main_checkout):
                 raise SessionError("The driver is installed on main. Run land from the main checkout.")
+            name = branch.removeprefix("fix/")
+            if (
+                not branch.startswith("fix/") or not SESSION_NAME.fullmatch(name)
+                or Path.cwd() != main_checkout.with_name(f"{main_checkout.name}-{name}")
+            ):
+                raise SessionError("Bootstrap from a sibling acal-<name> worktree on fix/<name>.")
         else:
-            check_driver(base, main_checkout)
+            check_driver(base, main_checkout, running_driver)
         clean_checkout()
         if git("branch", "--show-current") != branch:
             raise SessionError("The task branch changed while fetching main. Run land again.")
@@ -321,10 +332,13 @@ def land(common_dir, dry_run, bootstrap):
             raise SessionError("Main no longer descends from this session's base. Reconcile the rollback first.")
         if git("rev-list", "--merges", f"{base}..HEAD"):
             raise SessionError("The task contains merge commits. Make the branch linear first.")
+        if git("branch", "--show-current") != branch:
+            raise SessionError("The task branch changed before rebase. Run land again.")
         record["rebasing_onto"] = base
         write_session(record)
         subprocess.run(
-            ["git", "rebase", "--no-autostash", "--no-update-refs", "--reapply-cherry-picks", base],
+            ["git", "rebase", "--no-autostash", "--no-update-refs", "--no-gpg-sign",
+             "--reapply-cherry-picks", base, branch],
             env=worktree_git_env(), check=True,
         )
         record["base"] = base
@@ -401,7 +415,7 @@ def main():
     end_parser = commands.add_parser("end", help="remove a clean session that has landed")
     end_parser.add_argument("name")
     args = parser.parse_args()
-    if hasattr(args, "name") and not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", args.name):
+    if hasattr(args, "name") and not SESSION_NAME.fullmatch(args.name):
         parser.error("name must use lowercase letters, digits, and single hyphens")
     if getattr(args, "issue", None) is not None and not re.fullmatch(r"[1-9][0-9]*", args.issue):
         parser.error("--issue must be a positive GitHub issue number")
@@ -414,6 +428,7 @@ def main():
     if args.command == "list":
         print(git("worktree", "list"))
     elif args.command == "land":
+        running_driver = git("hash-object", "--no-filters", "scripts/session")
         if driver != common_dir.parent and not args.bootstrap:
             raise SessionError("Run the main checkout's scripts/session land --worktree <path>.")
         if args.bootstrap and (driver == common_dir.parent or (worktree is not None and worktree != driver)):
@@ -425,7 +440,7 @@ def main():
                 or Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != common_dir
             ):
                 raise SessionError("--worktree must point to a checkout root in this clone.")
-        land(common_dir, args.dry_run, args.bootstrap)
+        land(common_dir, args.dry_run, args.bootstrap, running_driver)
     else:
         home = common_dir.parent
         path = home.with_name(f"{home.name}-{args.name}")
