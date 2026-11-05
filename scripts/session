@@ -289,7 +289,8 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
 
 
 def verify(common_dir, head, evidence):
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
+    env = {key: value for key, value in os.environ.items() if not key.startswith("BASH_FUNC_")}
+    env.update(PYTHONDONTWRITEBYTECODE="1", GOENV="off", GOWORK="off")
     for variable in ("MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKEOVERRIDES", "GOFLAGS",
                      "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS"):
         env.pop(variable, None)
@@ -305,6 +306,15 @@ def check_driver(base, main_checkout, running_driver):
     expected = git("rev-parse", f"{base}:scripts/session", cwd=main_checkout)
     if running_driver != expected:
         raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
+
+
+def run_pre_push_hook(main_checkout, target, base, head, evidence):
+    # The transport uses a pinned alias. Run the hook once with the normal
+    # origin name and the same ref update that the pinned push will send.
+    update = evidence / "pre-push-refs.txt"
+    update.write_text(f"{head} {head} {MAIN} {base}\n")
+    git("hook", "run", "--ignore-missing", f"--to-stdin={update}", "pre-push", "--",
+        "origin", target, cwd=main_checkout)
 
 
 def land(common_dir, dry_run, bootstrap, running_driver):
@@ -388,9 +398,11 @@ def land(common_dir, dry_run, bootstrap, running_driver):
         # The candidate descends from base. Requiring the remote to still be exactly
         # base makes this a fast-forward even if someone rewinds main before push.
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
-                "--no-follow-tags", "--recurse-submodules=no"]
+                "--no-follow-tags", "--recurse-submodules=no", "--no-verify"]
         if dry_run:
-            push.extend(("--dry-run", "--no-verify"))
+            push.append("--dry-run")
+        else:
+            run_pre_push_hook(main_checkout, target, base, head, evidence)
         name, remote_config = remote
         env = worktree_git_env(main_checkout, remote_config) if dry_run else git_config_env(remote_config)
         git(*push, "--", name, f"{head}:{MAIN}", cwd=main_checkout, env=env)
