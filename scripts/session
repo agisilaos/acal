@@ -107,6 +107,9 @@ def clean_checkout(cwd=None):
                   "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START"):
         if Path(git("rev-parse", "--path-format=absolute", "--git-path", state, cwd=cwd)).exists():
             raise SessionError(f"A Git operation is in progress ({state}). Finish or abort it first.")
+    entries = git("ls-files", "-v", "-z", cwd=cwd).split("\0")
+    if any(entry and (entry[0].islower() or entry.startswith("S ")) for entry in entries):
+        raise SessionError("Clear assume-unchanged and skip-worktree index flags before proceeding.")
     if git("status", "--porcelain", "--untracked-files=normal", "--ignored", cwd=cwd):
         raise SessionError("The worktree contains local files or edits. Inspect git status before proceeding.")
 
@@ -309,7 +312,7 @@ def land(common_dir, dry_run):
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
                 "--no-follow-tags", "--recurse-submodules=no"]
         if dry_run:
-            push.append("--dry-run")
+            push.extend(("--dry-run", "--no-verify"))
         name, env = remote
         git(*push, "--", name, f"{head}:{MAIN}", env=env)
         if dry_run:
@@ -350,6 +353,7 @@ def main():
     start_parser.add_argument("--issue", help="reserve an open acal issue for the worktree")
     commands.add_parser("list", help="list local worktrees and branches")
     land_parser = commands.add_parser("land", help="review, verify, and push the committed task to main")
+    land_parser.add_argument("--worktree", type=Path, help="target worktree when running from the main checkout")
     land_parser.add_argument("--dry-run", action="store_true", help="run the gates and rehearse the push")
     end_parser = commands.add_parser("end", help="remove a clean session that has landed")
     end_parser.add_argument("name")
@@ -360,11 +364,19 @@ def main():
         parser.error("--issue must be a positive GitHub issue number")
 
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    worktree = args.worktree.resolve() if args.command == "land" and args.worktree else None
     os.chdir(Path(__file__).resolve().parent.parent)
     common_dir = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     if args.command == "list":
         print(git("worktree", "list"))
     elif args.command == "land":
+        if worktree is not None:
+            os.chdir(worktree)
+            if (
+                Path(git("rev-parse", "--show-toplevel")).resolve() != worktree
+                or Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != common_dir
+            ):
+                raise SessionError("--worktree must point to a checkout root in this clone.")
         land(common_dir, args.dry_run)
     else:
         home = common_dir.parent

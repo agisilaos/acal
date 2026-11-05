@@ -28,14 +28,16 @@ Reconcile relevant docs and issue state with the result. Commit when authorized.
 
 ## Land
 
-When authorized to push, run `scripts/session land` using the session worktree's copy
-of the script. A landing requires a clean worktree on its original task branch,
+When authorized to push, use `scripts/session land --worktree <path>` from a clean,
+current main checkout. The main checkout supplies the driver, including when the
+task changes `scripts/session`. A landing requires a clean worktree on its original task branch,
 linear commits, and one `origin` URL shared by fetch and push. For HTTPS authentication,
 use a Git credential helper and keep credentials out of the URL.
 
-1. The script fetches and rebases onto `origin/main`. If Git stops on a conflict,
-   resolve or abort the rebase before retrying. If `main` was rolled back past the
-   session's recorded base, compare the task with the rollback before starting fresh.
+1. Let the script fetch and rebase onto `origin/main`. If Git stops on a conflict,
+   resolve or abort the rebase it started before retrying. If `main` was rolled
+   back past the session's recorded base, compare the task with the rollback
+   before starting fresh.
 2. A read-only Codex run starts outside the candidate checkout and reviews each commit
    in the exact range. Findings and incomplete reviews stop the landing. Address
    actionable findings in scope, then retry with the corrected commits. The script
@@ -51,8 +53,8 @@ use a Git credential helper and keep credentials out of the URL.
 
 If `main` or the candidate moves during the gates, run `land` again to qualify the
 new range. The gates live in `scripts/session land`. Use that command for task landings.
-`scripts/session land --dry-run` rebases, reviews, verifies, and rehearses the push
-without publishing. Each attempt prints log paths under
+`scripts/session land --worktree <path> --dry-run` rebases, reviews, verifies, and
+rehearses the push without running pre-push hooks or publishing. Each attempt prints log paths under
 `~/Library/Logs/acal/sessions/`.
 
 ## End
