@@ -149,15 +149,8 @@ def release_issue(common_dir, path, branch):
         if Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=path)).resolve() != common_dir:
             raise SessionError(f"{path} is outside this clone.")
         record = read_session(path)
-        rebase_active = any(
-            Path(git("rev-parse", "--path-format=absolute", "--git-path", state, cwd=path)).is_dir()
-            for state in ("rebase-merge", "rebase-apply")
-        )
-        if (
-            record.get("branch") != branch or not record.get("issue")
-            or not record.get("rebasing_onto") or not rebase_active
-        ):
-            raise SessionError("Choose a session with an issue and a stopped landing rebase.")
+        if record.get("branch") != branch or not record.get("issue"):
+            raise SessionError("Choose a registered session that holds an issue.")
         issue = record["issue"]
         record["issue"] = None
         record["superseded"] = True
@@ -202,7 +195,10 @@ def review_client():
     client = shutil.which(override if override is not None else "codex")
     if client is None:
         raise SessionError("Codex is unavailable. Set ACAL_CODEX to a Codex CLI executable.")
-    return str(Path(client).absolute())
+    executable = Path(client).resolve()
+    if executable.is_relative_to(Path.cwd()):
+        raise SessionError("Use a Codex CLI outside the task worktree.")
+    return str(executable)
 
 
 def review(base, head, evidence):
@@ -286,6 +282,8 @@ def check_candidate(branch, head, target, remote, base, phase, main_checkout):
     if check_push_target(main_checkout) != target or fetch_main(*remote, cwd=main_checkout) != base:
         raise SessionError(f"Origin or main changed during {phase}. Run land again.")
     clean_checkout()
+    if read_session().get("superseded"):
+        raise SessionError("This session released its issue for a retry. Land from the new session.")
     if git("branch", "--show-current") != branch or git("rev-parse", "HEAD") != head:
         raise SessionError(f"The task branch changed during {phase}. Run land again.")
 
@@ -426,10 +424,16 @@ def end(common_dir, path, branch):
     print(f"Removed {path} and {branch}.")
 
 
-def sanitize_environment():
-    search_path = os.pathsep.join(
-        entry for entry in os.environ.get("PATH", os.defpath).split(os.pathsep) if os.path.isabs(entry)
-    )
+def sanitize_environment(driver, worktree):
+    excluded = (driver, worktree) if worktree is not None else (driver,)
+    entries = []
+    for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
+        if os.path.isabs(entry):
+            path = Path(entry).resolve()
+            tools = (path, *((path / name).resolve() for name in ("git", "gh", "codex", "make")))
+            if not any(tool.is_relative_to(root) for tool in tools for root in excluded):
+                entries.append(str(path))
+    search_path = os.pathsep.join(entries)
     if not search_path:
         raise SessionError("PATH must include an absolute tool directory.")
     os.environ["PATH"] = search_path
@@ -457,7 +461,7 @@ def main(source):
     land_parser.add_argument("--dry-run", action="store_true", help="run the gates and rehearse the push")
     end_parser = commands.add_parser("end", help="remove a clean session that has landed")
     end_parser.add_argument("name")
-    release_parser = commands.add_parser("release-issue", help="release an issue after a rebase conflict")
+    release_parser = commands.add_parser("release-issue", help="release a session's issue for a fresh retry")
     release_parser.add_argument("name")
     args = parser.parse_args()
     if hasattr(args, "name") and not SESSION_NAME.fullmatch(args.name):
@@ -465,9 +469,9 @@ def main(source):
     if getattr(args, "issue", None) is not None and not re.fullmatch(r"[1-9][0-9]*", args.issue):
         parser.error("--issue must be a positive GitHub issue number")
 
-    sanitize_environment()
     worktree = args.worktree.resolve() if args.command == "land" and args.worktree else None
     driver = Path(__file__).resolve().parent.parent
+    sanitize_environment(driver, worktree)
     os.chdir(driver)
     common_dir = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
     if args.command == "list":

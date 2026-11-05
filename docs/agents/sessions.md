@@ -41,11 +41,11 @@ worktree named `acal-<name>` based on the latest `origin/main`. Run
 
 1. Let the script fetch and rebase onto `origin/main`. If Git stops on a conflict,
    preserve that worktree for inspection and reconcile the task in a fresh session
-   based on current `main`. For a tracked issue, run `scripts/session release-issue
-   <old-name>` from the main checkout before starting the retry with `--issue`. This
-   preserves the conflicted checkout and prevents it from landing later. If `main`
-   was rolled back past the recorded base, compare the task with the rollback
-   before starting fresh.
+   based on current `main`. If `main` was rolled back past the recorded base, compare
+   the task with the rollback before starting fresh. In either case, run
+   `scripts/session release-issue <old-name>` from the main checkout before starting
+   a retry with the same `--issue`. This preserves the old checkout and prevents it
+   from landing later.
 2. A read-only Codex run starts outside the candidate checkout and reviews each commit
    in the exact range. Findings and incomplete reviews stop the landing. Address
    actionable findings in scope, then retry with the corrected commits. The script
