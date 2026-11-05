@@ -224,11 +224,12 @@ def review(base, head, evidence):
         "additionalProperties": False,
     }))
     verdict = evidence / "review.json"
-    inspect = f"git --no-replace-objects -C {shlex.quote(str(Path.cwd()))}"
+    inspect = f"env GIT_GRAFT_FILE=/dev/null git --no-replace-objects -C {shlex.quote(str(Path.cwd()))}"
     prompt = (
         f"Review the committed acal change from {base} to {head}. "
         f"Inspect each commit with {inspect} log --reverse --format=fuller --no-notes --no-show-signature "
         f"-p --text --no-ext-diff --no-textconv {base}..{head}. "
+        f"Use {inspect} cat-file commit <commit> to inspect each raw header and message. "
         f"Use {inspect} show <commit>:<path> to read changed content in its own commit, "
         "including files deleted in a later commit. If a changed blob is opaque or its "
         "diff is truncated, inspect the blob directly. Report any payload you cannot inspect. "
@@ -331,6 +332,8 @@ def land(common_dir, dry_run, bootstrap, running_driver):
     main_checkout = common_dir.parent
     if Path.cwd() == main_checkout:
         raise SessionError("Land from the session worktree.")
+    if git("rev-parse", "--is-shallow-repository", cwd=main_checkout) == "true":
+        raise SessionError("Landing requires a full clone to review complete commit history.")
     with session_lock(common_dir):
         clean_checkout()
         branch = git("branch", "--show-current")
@@ -467,16 +470,20 @@ def sanitize_environment(driver, worktree):
     for variable in (
         "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
         "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_EXEC_PATH",
-        "GIT_CONFIG_PARAMETERS", "GIT_GRAFT_FILE", "GIT_PREFIX", "GIT_SHALLOW_FILE",
+        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_PREFIX", "GIT_SHALLOW_FILE",
         "GIT_REPLACE_REF_BASE", "GIT_NAMESPACE", "GIT_QUARANTINE_PATH",
         "GIT_SSH", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS",
     ):
         os.environ.pop(variable, None)
+    for variable in list(os.environ):
+        if variable.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
+            os.environ.pop(variable)
     for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
         value = os.environ.get(variable)
         if value and (not os.path.isabs(value) or inside_checkout(Path(value).resolve(), checkout_ids)):
             os.environ.pop(variable, None)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    os.environ["GIT_GRAFT_FILE"] = "/dev/null"
     os.environ["GIT_PAGER"] = "cat"
 
 
