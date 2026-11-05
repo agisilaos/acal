@@ -34,7 +34,7 @@ def git(*args, cwd=None, env=None):
 def git_config_env(config):
     env = os.environ.copy()
     count = int(env.get("GIT_CONFIG_COUNT", "0"))
-    for index, (key, value) in enumerate(config.items(), start=count):
+    for index, (key, value) in enumerate(config, start=count):
         env[f"GIT_CONFIG_KEY_{index}"] = key
         env[f"GIT_CONFIG_VALUE_{index}"] = value
     env["GIT_CONFIG_COUNT"] = str(count + len(config))
@@ -42,7 +42,7 @@ def git_config_env(config):
 
 
 def worktree_git_env(cwd=None, remote_config=None):
-    config = {**(remote_config or {}), "core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
+    config = {"core.hooksPath": "/dev/null", "core.fsmonitor": "false"}
     drivers = subprocess.run(
         ["git", "config", "--null", "--name-only", "--get-regexp",
          r"^(filter\..*\.(clean|smudge|process|required)|merge\..*\.driver|hook\..*\.command)$"],
@@ -55,7 +55,7 @@ def worktree_git_env(cwd=None, remote_config=None):
             config[f"{key.rsplit('.', 1)[0]}.enabled"] = "false"
         elif key:
             config[key] = "false" if key.endswith((".required", ".driver")) else ""
-    return git_config_env(config)
+    return git_config_env([*(remote_config or ()), *config.items()])
 
 
 @contextmanager
@@ -265,17 +265,21 @@ def check_push_target(main_checkout):
     return target
 
 
-def pin_remote(target):
-    name = f"acal-session-{uuid.uuid4().hex}"
-    sentinel = f"{name}:"
+def pin_remote(target, main_checkout):
+    sentinel = f"acal-session-{uuid.uuid4().hex}:"
     # A single insteadOf expansion resolves the sentinel to the checked URL.
-    # An explicit pushurl keeps Git from applying pushInsteadOf to that URL.
-    config = {
-        f"remote.{name}.url": sentinel,
-        f"remote.{name}.pushurl": sentinel,
-        f"url.{target}.insteadOf": sentinel,
-    }
-    return name, config
+    # Empty values clear inherited URLs while keeping origin's other settings.
+    config = (
+        ("remote.origin.url", ""), ("remote.origin.url", sentinel),
+        ("remote.origin.pushurl", ""), ("remote.origin.pushurl", sentinel),
+        (f"url.{target}.insteadOf", sentinel),
+    )
+    env = git_config_env(config)
+    fetch_urls = git("remote", "get-url", "--all", "origin", cwd=main_checkout, env=env)
+    push_urls = git("remote", "get-url", "--push", "--all", "origin", cwd=main_checkout, env=env)
+    if fetch_urls != target or push_urls != target:
+        raise SessionError("Git could not pin origin to the checked URL.")
+    return "origin", config
 
 
 def check_candidate(branch, head, target, remote, base, phase, main_checkout):
@@ -299,22 +303,16 @@ def verify(common_dir, head, evidence):
             env=worktree_git_env())
         git("checkout", "--quiet", "--detach", head, cwd=checkout, env=worktree_git_env(checkout))
         clean_checkout(checkout)
-        run_logged(["make", "verify"], evidence / "verify.log", cwd=checkout, env=env)
+        log = evidence / "verify.log"
+        run_logged(["make", "verify"], log, cwd=checkout, env=env)
+        if "[verify] passed" not in log.read_text().splitlines():
+            raise SessionError(f"Verification did not report completion. See {log}.")
 
 
 def check_driver(base, main_checkout, running_driver):
     expected = git("rev-parse", f"{base}:scripts/session", cwd=main_checkout)
     if running_driver != expected:
         raise SessionError("The landing driver differs from origin/main. Update the main checkout and retry.")
-
-
-def run_pre_push_hook(main_checkout, target, base, head, evidence):
-    # The transport uses a pinned alias. Run the hook once with the normal
-    # origin name and the same ref update that the pinned push will send.
-    update = evidence / "pre-push-refs.txt"
-    update.write_text(f"{head} {head} {MAIN} {base}\n")
-    git("hook", "run", "--ignore-missing", f"--to-stdin={update}", "pre-push", "--",
-        "origin", target, cwd=main_checkout)
 
 
 def land(common_dir, dry_run, bootstrap, running_driver):
@@ -333,7 +331,7 @@ def land(common_dir, dry_run, bootstrap, running_driver):
         if issue:
             issue_is_open(issue)
         target = check_push_target(main_checkout)
-        remote = pin_remote(target)
+        remote = pin_remote(target, main_checkout)
         base = fetch_main(*remote, cwd=main_checkout)
         if bootstrap:
             if git("ls-tree", base, "--", "scripts/session", cwd=main_checkout):
@@ -398,11 +396,9 @@ def land(common_dir, dry_run, bootstrap, running_driver):
         # The candidate descends from base. Requiring the remote to still be exactly
         # base makes this a fast-forward even if someone rewinds main before push.
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
-                "--no-follow-tags", "--recurse-submodules=no", "--no-verify"]
+                "--no-follow-tags", "--recurse-submodules=no"]
         if dry_run:
-            push.append("--dry-run")
-        else:
-            run_pre_push_hook(main_checkout, target, base, head, evidence)
+            push.extend(("--dry-run", "--no-verify"))
         name, remote_config = remote
         env = worktree_git_env(main_checkout, remote_config) if dry_run else git_config_env(remote_config)
         git(*push, "--", name, f"{head}:{MAIN}", cwd=main_checkout, env=env)
@@ -442,8 +438,13 @@ def sanitize_environment(driver, worktree):
     for entry in os.environ.get("PATH", os.defpath).split(os.pathsep):
         if os.path.isabs(entry):
             path = Path(entry).resolve()
-            tools = (path, *((path / name).resolve() for name in ("git", "gh", "codex", "make")))
-            if not any(tool.is_relative_to(root) for tool in tools for root in excluded):
+            if not path.is_dir() or any(path.is_relative_to(root) for root in excluded):
+                continue
+            try:
+                links = [item.resolve() for item in path.iterdir() if item.is_symlink()]
+            except (OSError, RuntimeError):
+                continue
+            if not any(link.is_relative_to(root) for link in links for root in excluded):
                 entries.append(str(path))
     search_path = os.pathsep.join(entries)
     if not search_path:
@@ -458,6 +459,7 @@ def sanitize_environment(driver, worktree):
     ):
         os.environ.pop(variable, None)
     os.environ["GIT_NO_REPLACE_OBJECTS"] = "1"
+    os.environ["GIT_PAGER"] = "cat"
 
 
 def main(source):
