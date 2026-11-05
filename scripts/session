@@ -99,6 +99,10 @@ def primary_worktree():
     return checkout
 
 
+def cleanup_record(common_dir, branch):
+    return common_dir / f"acal-session-end-{branch.removeprefix('fix/')}.txt"
+
+
 def issue_is_open(number):
     state = subprocess.check_output(
         ["gh", "issue", "view", number, "--repo", "agisilaos/acal", "--json", "state", "--jq", ".state"],
@@ -135,6 +139,8 @@ def write_session(record, cwd=None):
 
 def start(common_dir, main_checkout, path, branch, issue):
     with session_lock(common_dir):
+        if cleanup_record(common_dir, branch).exists():
+            raise SessionError("Finish the previous cleanup with session end before reusing this name.")
         if os.path.lexists(path):
             raise SessionError(f"{path} already exists. See session list.")
         if issue:
@@ -189,7 +195,11 @@ def is_ancestor(older, newer, cwd=None):
 
 
 def includes_rolled_back_main(base):
-    tips = set(git("reflog", "show", "--format=%H", TRACKING).splitlines())
+    tips = set(git("reflog", "show", "--no-show-signature", "--format=%H", TRACKING).splitlines())
+    for entry in git("reflog", "show", "--no-show-signature", "--format=%H%x09%gs", "HEAD").splitlines():
+        sha, _, action = entry.partition("\t")
+        if action.startswith("rebase (start): checkout "):
+            tips.add(sha)
     if not tips:
         return False
     old_main = subprocess.check_output(
@@ -440,26 +450,51 @@ def land(common_dir, main_checkout, dry_run, bootstrap, running_driver):
             raise SessionError(f"Could not verify {head} on origin/main after push.")
 
 
+def branch_worktrees(branch_ref):
+    registered = git("worktree", "list", "--porcelain", "-z").split("\0\0")
+    return {
+        Path(fields[0].removeprefix("worktree ")).resolve()
+        for fields in (entry.split("\0") for entry in registered)
+        if fields[0].startswith("worktree ") and f"branch {branch_ref}" in fields
+    }
+
+
 def end(common_dir, main_checkout, path, branch):
     with session_lock(common_dir):
         if Path.cwd() == path:
             raise SessionError("Run end from outside the worktree being removed.")
         base = fetch_main(cwd=main_checkout)
-        registered = git("worktree", "list", "--porcelain", "-z").split("\0\0")
-        if not any(
-            f"worktree {path}" in fields and f"branch refs/heads/{branch}" in fields
-            for fields in (entry.split("\0") for entry in registered)
-        ) or read_session(path).get("branch") != branch:
+        pending = cleanup_record(common_dir, branch)
+        branch_ref = f"refs/heads/{branch}"
+        holders = branch_worktrees(branch_ref)
+        if holders - {path}:
+            raise SessionError(f"{branch} is checked out in another worktree.")
+        if path.exists():
+            if path not in holders or read_session(path).get("branch") != branch:
+                raise SessionError(f"{path} is not the registered session worktree for {branch}.")
+            head = git("rev-parse", "HEAD", cwd=path)
+        elif pending.is_file():
+            head = pending.read_text().strip()
+        else:
             raise SessionError(f"{path} is not the registered session worktree for {branch}.")
-        head = git("rev-parse", "HEAD", cwd=path)
         if not is_ancestor(head, base):
             raise SessionError(f"{branch} has commits outside origin/main. Land them before ending.")
-        clean_checkout(path)
-        if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
-            raise SessionError("The task branch or tip changed during cleanup. Run end again.")
-        git("worktree", "remove", str(path), env=worktree_git_env(path))
-        git("update-ref", "-d", f"refs/heads/{branch}", head,
-            cwd=main_checkout, env=worktree_git_env(main_checkout))
+        if path.exists():
+            clean_checkout(path)
+            if git("branch", "--show-current", cwd=path) != branch or git("rev-parse", "HEAD", cwd=path) != head:
+                raise SessionError("The task branch or tip changed during cleanup. Run end again.")
+            pending.write_text(f"{head}\n")
+            git("worktree", "remove", str(path), env=worktree_git_env(path))
+        if branch_worktrees(branch_ref):
+            raise SessionError(f"{branch} is checked out in another worktree.")
+        branch_exists = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", branch_ref], cwd=main_checkout,
+        )
+        if branch_exists.returncode != 1:
+            branch_exists.check_returncode()
+            git("update-ref", "-d", branch_ref, head,
+                cwd=main_checkout, env=worktree_git_env(main_checkout))
+        pending.unlink()
     print(f"Removed {path} and {branch}.")
 
 
