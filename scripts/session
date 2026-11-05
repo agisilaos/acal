@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 
 
 MAIN = "refs/heads/main"
@@ -39,8 +40,8 @@ def session_lock(common_dir):
         yield
 
 
-def fetch_main(target="origin"):
-    git("fetch", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--refmap=",
+def fetch_main(target="origin", config=()):
+    git(*config, "fetch", "--quiet", "--no-tags", "--no-prune", "--no-prune-tags", "--refmap=",
         "--no-write-fetch-head", "--", target, f"+{MAIN}:{TRACKING}")
     return git("rev-parse", TRACKING)
 
@@ -66,7 +67,8 @@ def read_session(cwd=None):
         return {}
     except ValueError:
         raise SessionError(f"Invalid session metadata at {metadata}.") from None
-    if not isinstance(record, dict) or record.keys() != {"branch", "base", "issue"}:
+    fields = {"branch", "base", "issue"}
+    if not isinstance(record, dict) or record.keys() - {"rebasing_onto"} != fields:
         raise SessionError(f"Invalid session metadata at {metadata}.")
     return record
 
@@ -187,11 +189,20 @@ def check_push_target():
     return urls[0]
 
 
-def check_candidate(branch, head, target, base, phase):
+def pin_remote(target):
+    name = f"acal-session-{uuid.uuid4().hex}"
+    sentinel = f"{name}:"
+    # A single insteadOf expansion resolves the sentinel to the checked URL.
+    # An explicit pushurl keeps Git from applying pushInsteadOf to that URL.
+    return name, ("-c", f"remote.{name}.url={sentinel}", "-c", f"remote.{name}.pushurl={sentinel}",
+                  "-c", f"url.{target}.insteadOf={sentinel}")
+
+
+def check_candidate(branch, head, target, remote, base, phase):
     clean_checkout()
     if git("branch", "--show-current") != branch or git("rev-parse", "HEAD") != head:
         raise SessionError(f"The task branch changed during {phase}. Run land again.")
-    if check_push_target() != target or fetch_main(target) != base:
+    if check_push_target() != target or fetch_main(*remote) != base:
         raise SessionError(f"Origin or main changed during {phase}. Run land again.")
 
 
@@ -219,17 +230,25 @@ def land(common_dir, dry_run):
         if issue:
             issue_is_open(issue)
         target = check_push_target()
-        base = fetch_main(target)
+        remote = pin_remote(target)
+        base = fetch_main(*remote)
+        attempted_base = record.pop("rebasing_onto", None)
+        if attempted_base and is_ancestor(attempted_base, "HEAD"):
+            # A stopped rebase may have been completed by hand.
+            record["base"] = attempted_base
         if not is_ancestor(record["base"], base):
             raise SessionError("Main no longer descends from this session's base. Reconcile the rollback first.")
         if git("rev-list", "--merges", f"{base}..HEAD"):
             raise SessionError("The task contains merge commits. Make the branch linear first.")
-        record["base"] = base
+        record["rebasing_onto"] = base
         write_session(record)
         subprocess.run(
             ["git", "rebase", "--no-autostash", "--no-update-refs", "--reapply-cherry-picks", base],
             check=True,
         )
+        record["base"] = base
+        del record["rebasing_onto"]
+        write_session(record)
         head = git("rev-parse", "HEAD")
         if head == base:
             print(f"{branch} is already on origin/main.")
@@ -244,21 +263,22 @@ def land(common_dir, dry_run):
     review(base, head, evidence)
 
     with session_lock(common_dir):
-        check_candidate(branch, head, target, base, "review")
+        check_candidate(branch, head, target, remote, base, "review")
         verify(common_dir, head, evidence)
         if issue:
             issue_is_open(issue)
-        check_candidate(branch, head, target, base, "verification")
+        check_candidate(branch, head, target, remote, base, "verification")
         # The candidate descends from base. Requiring the remote to still be exactly
         # base makes this a fast-forward even if someone rewinds main before push.
         push = ["push", f"--force-with-lease={MAIN}:{base}", "--no-mirror",
                 "--no-follow-tags", "--recurse-submodules=no"]
         if dry_run:
             push.append("--dry-run")
-        git(*push, "--", target, f"{head}:{MAIN}")
+        name, config = remote
+        git(*config, *push, "--", name, f"{head}:{MAIN}")
         if dry_run:
             print(f"Dry run passed for {head}.")
-        elif is_ancestor(head, fetch_main(target)):
+        elif is_ancestor(head, fetch_main(*remote)):
             print(f"Landed {head} on origin/main.")
         else:
             raise SessionError(f"Could not verify {head} on origin/main after push.")
